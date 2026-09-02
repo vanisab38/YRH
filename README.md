@@ -1,116 +1,77 @@
-# SawasdeeLife Work Orders
+# Work Order System
 
-A small internal tool for tracking building maintenance work orders — replaces
-the shared monthly Excel log (`Work_Order_MM.YYYY.xlsx`) with a real database,
-a filterable table/kanban interface, and an API.
+A replacement for the monthly `Work_Order_MM_YYYY.xlsx` workbooks used to
+track maintenance work at the residence. Multi-user web app, Thai-language
+UI, phone-first. Full spec: see the build specification handed to this
+project (data model, screens, reports, import rules, phased build plan).
 
-Built as a plain Node.js + Express + SQLite app: no external services or
-accounts required, runs entirely on one machine/server with `npm install &&
-npm start`.
+**v1 scope: record and find the work.** No payment calculation — the system
+flags special-category jobs (แอร์, ยาแนว, โปรเจค) and reports who worked on
+them and on which days; amounts are still worked out by hand from that
+report.
 
-## Why this shape
+Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
 
-The original spreadsheet has one row per task with free-typed Category,
-Location, and "By" (assignee) cells, plus four extra columns (one per staff
-member) marked with an `X` to show who worked on it. That's fine for a single
-month's log, but it means the same category or person gets spelled several
-different ways over time, and there's no way to filter/report on the data
-without opening Excel.
+## Status
 
-This app normalizes those into proper tables/lookups and adds real status
-tracking (with a 3-stage workflow instead of the sheet's just "done" /
-"pending") while keeping every field the spreadsheet already had.
-
-## Data model
-
-```
-staff              (id, name, active)
-categories         (id, name)
-locations          (id, label, type: room | floor | common_area | other)
-
-work_orders (
-  id, wo_number, status ('open' | 'in_progress' | 'done'),
-  category_id -> categories, location_id -> locations,
-  detail, reported_date, created_at, updated_at
-)
-
-work_order_assignees   (work_order_id, staff_id)   -- many-to-many, replaces the per-staff X columns
-work_order_notes       (work_order_id, staff_id, note, created_at)   -- optional running log per work order
-```
-
-See `server/schema.sql` for the full DDL.
-
-`categories` and `locations` are created on the fly the first time a new
-value is typed (via a `<datalist>` in the UI, so existing values still
-autocomplete) — this keeps data entry as fast as free text while the values
-end up normalized in their own tables.
+- **Phase 0** — done. The repo previously held an Express + SQLite
+  scaffold with only invented test data and no real users; moved to
+  [`old/`](old/) rather than deleted.
+- **Phase 1** — done. Schema (`db/schema.ts`), migrations
+  (`db/migrations/`), and seed data (`db/seed.ts`): workers, all 22
+  categories (with `is_special`/colour/group), category groups, and the
+  locations seen in the August sheet.
+- **Phase 2 onward** — see the build spec's phase list.
 
 ## Running it
 
-Requires Node.js 18+.
+Requires Node.js 18+ and a Postgres 14+ database (Supabase or Neon in
+production; any local Postgres works for development — needs the
+`pg_trgm` extension, which the migrations enable).
 
 ```sh
 npm install
-npm run seed     # optional: loads a handful of sample work orders
-npm start        # http://localhost:3000
+cp .env.example .env.local   # set DATABASE_URL
+npm run db:migrate           # create schema
+npm run db:seed              # load workers/categories/locations
+npm run dev                  # http://localhost:3000
 ```
 
-`npm run dev` restarts the server on file changes.
+## Data model
 
-The SQLite database file is created automatically at `data/workorders.db` on
-first run (ignored by git).
+Postgres tables, matching the spec's §2 exactly:
 
-## Importing the real spreadsheet history
-
-To bring in the existing monthly log(s) instead of (or in addition to) the
-sample seed data:
-
-```sh
-npm run import -- /path/to/Work_Order_08.2026.xlsx
+```
+users               -- who logs in: admin | office | worker
+workers              -- who does the jobs (staff, contractors, other)
+categories           -- every distinct spreadsheet category, nothing merged
+category_groups      -- reporting-only roll-up, never consulted for is_special
+locations            -- rooms and common areas
+work_orders          -- the job: room, category, status, opener
+wo_assignments        -- who a job is assigned to
+wo_log_entries        -- one row per day of activity (replaces repeated Excel rows)
+log_entry_workers     -- who actually worked that day
+attachments
+audit_log
 ```
 
-This reads the first sheet, skips header/template rows and rows with no
-detail, and maps:
-- `เสร็จ` → `done`, `ค้าง` → `in_progress`, anything else → `open`
-- the `By` cell (which may contain several names separated by `,` `/` or
-  spaces) → one row per assignee in `work_order_assignees`
-- `dd.mm.yyyy` dates → `yyyy-mm-dd`
+The key modelling decision: **one Excel row is not one work order.** A work
+order is the job; a log entry is what happened on one day. A Postgres
+trigger (`db/migrations/0001_trigram_and_status_trigger.sql`) keeps
+`work_orders.status` in sync with the latest log entry so the two can never
+drift apart.
 
-Run it once per monthly file you want to bring in — it's additive, so
-importing the same file twice will create duplicate rows.
+Thai text search uses trigram matching (`pg_trgm`), not `tsvector` — Postgres
+ships no Thai word-segmentation dictionary and Thai text has no spaces
+between words.
 
-## API
+## Project layout
 
-All endpoints are under `/api`, JSON in/out.
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/api/work-orders` | filters: `status`, `category`, `location`, `staff`, `q` (search in detail) |
-| GET | `/api/work-orders/:id` | |
-| POST | `/api/work-orders` | `{ wo_number, category, location, detail, status, reported_date, assignees: [name, ...] }` |
-| PATCH | `/api/work-orders/:id` | partial update, same shape |
-| DELETE | `/api/work-orders/:id` | |
-| GET/POST | `/api/work-orders/:id/notes` | append a timestamped note |
-| GET/POST | `/api/staff` | |
-| GET/POST | `/api/categories` | |
-| GET/POST | `/api/locations` | |
-
-## Interface
-
-- **Table view** — filterable list, closest to the original spreadsheet.
-- **Kanban view** — Open / In Progress / Done columns; move a card between
-  them with the dropdown on the card.
-- **New/Edit dialog** — category and location autocomplete from existing
-  values but accept new ones; assignees are checkboxes so a task can have
-  several people on it (like the sheet's per-staff X columns).
-
-## Possible next steps
-
-- Auth (even a single shared staff login) before this goes on a network
-  anyone else can reach.
-- Photo attachments per work order (common for maintenance logs).
-- A monthly export back to `.xlsx` if anyone downstream still needs the old
-  format.
-- Swap SQLite for Postgres (e.g. Supabase) if this needs to be accessed by
-  multiple people from different devices over the internet rather than run
-  on one local/staff machine.
+```
+app/              Next.js App Router pages/API routes
+db/schema.ts      Drizzle schema — the source of truth for the data model
+db/migrations/    Generated + hand-written SQL migrations
+db/seed.ts        Phase 1 seed data
+scripts/          Import script(s) for the historical Excel workbooks
+old/              Superseded Express + SQLite scaffold, kept per spec (never deleted)
+```
