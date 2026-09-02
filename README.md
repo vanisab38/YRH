@@ -63,7 +63,15 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   `PrintButton` + `print:` Tailwind variants to hide the chrome) rather
   than a server-rendered PDF — no extra dependency, and it's what the spec
   actually needs for a monthly stack of reports.
-- **Phase 7 onward** — see the build spec's phase list.
+- **Phase 7** — code done; **needs a real Supabase project to actually
+  work** (see [Photos](#photos) below — this session has no credentials
+  for one). Photo upload on the work order detail page, resized to max
+  1600px server-side (`sharp`), stored in a private Supabase Storage
+  bucket, displayed via short-lived signed URLs. Degrades to a "not
+  configured" message instead of a 500 page when the env vars are unset —
+  verified: an upload attempt against unset Supabase config shows a
+  friendly Thai error with no stack trace and no orphaned database row.
+- **Phase 8 onward** — see the build spec's phase list.
 
   **Known gap, not scoped to any phase:** there's no "create user" admin
   screen yet (`db:seed:users` seeds dev accounts by hand — see Auth below),
@@ -103,6 +111,36 @@ remove before any real deployment**:
 | `admin` | admin | — |
 | `office` | office | — |
 | `peal`, `na`, `khang`, `hong` | worker | เปิ้ล, นา, ข้าง, ฮอง |
+
+## Photos
+
+Photo attachments (`lib/storage.ts`, `lib/image.ts`) need a Supabase
+project — this session had no credentials to create or test against one,
+so the code is written and degrades cleanly when unconfigured, but hasn't
+been verified against a real bucket. One-time setup:
+
+1. Create a project at [supabase.com](https://supabase.com) (or use the one
+   already running `DATABASE_URL`, if it's a Supabase Postgres instance).
+2. Storage → New bucket → name it `attachments`, **leave it private**
+   (these are photos of guest rooms, not public assets — the app reads
+   them back through short-lived signed URLs, never a public one).
+3. Project Settings → API → copy the Project URL and the **service role**
+   key (not the `anon` key — uploads happen server-side in Server Actions,
+   never in the browser).
+4. Add to `.env.local`:
+   ```
+   SUPABASE_URL=https://xxxxx.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=eyJ...
+   SUPABASE_STORAGE_BUCKET=attachments
+   ```
+
+With those unset, the work order detail page still renders — the photo
+section shows "ระบบจัดเก็บรูปภาพยังไม่ได้ตั้งค่า" ("photo storage isn't
+configured yet") instead of a photo grid, and an upload attempt shows a
+friendly error rather than a 500. Once configured, no restart or code
+change should be needed — worth a real end-to-end check (upload a phone
+photo, confirm it resizes and the detail page displays it) before relying
+on this in production.
 
 ## Data model
 

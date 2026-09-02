@@ -3,10 +3,13 @@ import { notFound } from 'next/navigation';
 import { verifySession } from '@/lib/dal';
 import { canAddLogEntryToJob } from '@/lib/permissions';
 import { getWorkOrderDetail, getActiveWorkers, isWorkerAssigned } from '@/lib/queries/work-orders';
+import { getWorkOrderAttachments } from '@/lib/queries/attachments';
 import { formatThaiDate } from '@/lib/dates';
 import { CategoryBadge } from '@/app/components/CategoryBadge';
 import { StatusPill } from '@/app/components/StatusPill';
 import { AddLogEntryForm } from './AddLogEntryForm';
+import { PhotoGallery } from './PhotoGallery';
+import { PhotoUploadForm } from './PhotoUploadForm';
 
 // Work order detail (§3): header with WO#/room/category/status, then the
 // log entries in date order below — the job's history the Excel loses.
@@ -20,6 +23,16 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
     session.role === 'worker' ? await isWorkerAssigned(id, session.workerId ?? '') : false;
   const canLog = canAddLogEntryToJob(session.role, job.createdBy, session.userId) || assigned;
   const workers = canLog ? await getActiveWorkers() : [];
+
+  // §2 attachments: Supabase Storage may not be configured yet (see README
+  // "Photos") — degrade to "photos unavailable" instead of a 500 page.
+  let photos: Awaited<ReturnType<typeof getWorkOrderAttachments>> = [];
+  let photosUnavailable = false;
+  try {
+    photos = await getWorkOrderAttachments(id);
+  } catch {
+    photosUnavailable = true;
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-6">
@@ -72,6 +85,16 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             ))}
           </ol>
         )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-zinc-700">รูปภาพ</h2>
+        {photosUnavailable ? (
+          <p className="text-sm text-zinc-400">ระบบจัดเก็บรูปภาพยังไม่ได้ตั้งค่า</p>
+        ) : (
+          <PhotoGallery photos={photos} />
+        )}
+        {canLog && !photosUnavailable && <PhotoUploadForm workOrderId={job.id} />}
       </section>
 
       {canLog && <AddLogEntryForm workOrderId={job.id} workers={workers} />}
