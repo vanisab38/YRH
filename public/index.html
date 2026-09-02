@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SawasdeeLife — Work Orders</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>Work Orders</h1>
+  <div class="topbar__actions">
+    <div class="view-toggle">
+      <button data-view="table" class="active">Table</button>
+      <button data-view="kanban">Kanban</button>
+    </div>
+    <button id="newWorkOrderBtn" class="btn btn--primary">+ New Work Order</button>
+  </div>
+</header>
+
+<section class="filters">
+  <input id="searchInput" type="search" placeholder="Search detail…" />
+  <select id="statusFilter">
+    <option value="">All statuses</option>
+    <option value="open">Open</option>
+    <option value="in_progress">In Progress</option>
+    <option value="done">Done</option>
+  </select>
+  <select id="categoryFilter"><option value="">All categories</option></select>
+  <select id="locationFilter"><option value="">All locations</option></select>
+  <select id="staffFilter"><option value="">All staff</option></select>
+</section>
+
+<main id="tableView" class="view">
+  <table>
+    <thead>
+      <tr>
+        <th>WO#</th><th>Date</th><th>Category</th><th>Location</th>
+        <th>Detail</th><th>Status</th><th>Assignees</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</main>
+
+<main id="kanbanView" class="view" hidden>
+  <div class="kanban">
+    <div class="kanban__col" data-status="open">
+      <h2>Open</h2>
+      <div class="kanban__cards" id="col-open"></div>
+    </div>
+    <div class="kanban__col" data-status="in_progress">
+      <h2>In Progress</h2>
+      <div class="kanban__cards" id="col-in_progress"></div>
+    </div>
+    <div class="kanban__col" data-status="done">
+      <h2>Done</h2>
+      <div class="kanban__cards" id="col-done"></div>
+    </div>
+  </div>
+</main>
+
+<dialog id="workOrderDialog">
+  <form id="workOrderForm" method="dialog">
+    <h2 id="dialogTitle">New Work Order</h2>
+    <input type="hidden" id="woId" />
+    <label>WO#
+      <input id="woNumber" type="text" placeholder="optional" />
+    </label>
+    <label>Date
+      <input id="woDate" type="date" />
+    </label>
+    <label>Category
+      <input id="woCategory" list="categoryOptions" placeholder="e.g. ไฟฟ้า" />
+      <datalist id="categoryOptions"></datalist>
+    </label>
+    <label>Location
+      <input id="woLocation" list="locationOptions" placeholder="e.g. 1408 or ล็อบบี้" />
+      <datalist id="locationOptions"></datalist>
+    </label>
+    <label>Detail
+      <textarea id="woDetail" required></textarea>
+    </label>
+    <label>Status
+      <select id="woStatus">
+        <option value="open">Open</option>
+        <option value="in_progress">In Progress</option>
+        <option value="done">Done</option>
+      </select>
+    </label>
+    <fieldset id="woAssignees"><legend>Assigned to</legend></fieldset>
+    <div class="dialog__actions">
+      <button type="button" id="cancelBtn">Cancel</button>
+      <button type="submit" class="btn btn--primary" id="saveBtn">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>
