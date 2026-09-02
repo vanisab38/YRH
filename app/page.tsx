@@ -50,6 +50,11 @@ export default async function Home() {
         <Link href="/rooms" className="hover:text-zinc-900">
           🏠 ประวัติห้อง
         </Link>
+        {canViewReports(session.role) && (
+          <Link href="/reports" className="hover:text-zinc-900">
+            📊 รายงาน
+          </Link>
+        )}
       </nav>
 
       {reviewList.length > 0 && (

@@ -26,3 +26,20 @@ export function formatThaiDate(date: string | Date): string {
   const d = typeof date === 'string' ? new Date(`${date}T00:00:00Z`) : date;
   return THAI_DATE_FORMATTER.format(d);
 }
+
+// §4 reports default to the current Bangkok month.
+export function currentMonthRange(): { from: string; to: string } {
+  const today = bangkokToday();
+  const [y, m] = today.split('-').map(Number);
+  const from = `${y}-${String(m).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { from, to };
+}
+
+// Whole days between a YYYY-MM-DD opened date and today, Bangkok-local.
+export function daysSince(date: string): number {
+  const start = new Date(`${date}T00:00:00Z`).getTime();
+  const today = new Date(`${bangkokToday()}T00:00:00Z`).getTime();
+  return Math.floor((today - start) / (24 * 60 * 60 * 1000));
+}

@@ -47,7 +47,23 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   `xlsx` npm package, which carries unpatched high-severity CVEs). Room
   history (`/rooms`): pick a room, see every work order raised on it newest
   first with per-category counts.
-- **Phase 6 onward** — see the build spec's phase list.
+- **Phase 6** — done, admin/office only (`/reports`). **4.1 Special work
+  report** (`/reports/special-work`): one section per special category,
+  staff/contractor day counts in separate columns, red/amber row flags for
+  no-one-logged and contractor-only jobs — verified against the spec's own
+  worked examples (WO 2608131: staff เปิ้ล (4) + contractor ช่างมิตซูบิชิ
+  (2); WO 2608091: เปิ้ล (3) among three workers). **4.2 Worker activity**
+  (`/reports/worker-activity`). **4.3 Pending/ageing**
+  (`/reports/ageing`): 0–3/4–7/8–14/15–30/30+ day buckets — not date-range
+  filtered, since it's about everything open right now. **4.4 Room
+  summary** (`/reports/rooms`): every room in one period at a glance,
+  distinct from the live single-room drill-down at `/rooms`, flagging
+  repeat issues in the same category. Every report exports to Excel
+  (`exceljs`) and "PDF" via the browser's native print-to-PDF (a
+  `PrintButton` + `print:` Tailwind variants to hide the chrome) rather
+  than a server-rendered PDF — no extra dependency, and it's what the spec
+  actually needs for a monthly stack of reports.
+- **Phase 7 onward** — see the build spec's phase list.
 
   **Known gap, not scoped to any phase:** there's no "create user" admin
   screen yet (`db:seed:users` seeds dev accounts by hand — see Auth below),
