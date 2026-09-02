@@ -9,8 +9,8 @@ import {
   jsonb,
   primaryKey,
   index,
-  uniqueIndex,
   check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -23,7 +23,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   displayName: text('display_name').notNull(),
   role: text('role').notNull(), // 'admin' | 'office' | 'worker'
-  workerId: uuid('worker_id').references((): any => workers.id),
+  workerId: uuid('worker_id').references((): AnyPgColumn => workers.id),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
