@@ -43,6 +43,15 @@ export default async function Home() {
         + เปิดงานใหม่
       </Link>
 
+      <nav className="flex gap-4 text-sm font-medium text-zinc-600">
+        <Link href="/search" className="hover:text-zinc-900">
+          🔍 ค้นหางาน
+        </Link>
+        <Link href="/rooms" className="hover:text-zinc-900">
+          🏠 ประวัติห้อง
+        </Link>
+      </nav>
+
       {reviewList.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-amber-800">

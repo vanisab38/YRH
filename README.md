@@ -39,7 +39,15 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   `+ บันทึกงานวันนี้`. `wo_no` is generated server-side inside the insert
   transaction with retry-on-collision, per §2. This is the minimum that
   replaces the Excel.
-- **Phase 5 onward** — see the build spec's phase list.
+- **Phase 5** — done. Search (`/search`): one box across description/WO#/
+  legacy_wo_no/room (substring match on the `pg_trgm` index from §5, not
+  word-based full-text search — Thai has no spaces between words) plus
+  filter chips for status/category/group/worker/date range, and an
+  "ส่งออกเป็น Excel" export (`/api/search/export`, via `exceljs` — not the
+  `xlsx` npm package, which carries unpatched high-severity CVEs). Room
+  history (`/rooms`): pick a room, see every work order raised on it newest
+  first with per-category counts.
+- **Phase 6 onward** — see the build spec's phase list.
 
   **Known gap, not scoped to any phase:** there's no "create user" admin
   screen yet (`db:seed:users` seeds dev accounts by hand — see Auth below),
