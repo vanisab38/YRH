@@ -1,0 +1,1 @@
+ALTER TABLE "workers" ADD CONSTRAINT "workers_name_unique" UNIQUE("name");

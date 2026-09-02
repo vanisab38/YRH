@@ -21,7 +21,11 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   (`db/migrations/`), and seed data (`db/seed.ts`): workers, all 22
   categories (with `is_special`/colour/group), category groups, and the
   locations seen in the August sheet.
-- **Phase 2 onward** — see the build spec's phase list.
+- **Phase 2** — script written and smoke-tested against a synthetic
+  fixture covering every documented edge case (§6); not yet run against
+  the real `Work_Order_08_2026.xlsx`, which hasn't been provided. See
+  [Importing the August workbook](#importing-the-august-workbook).
+- **Phase 3 onward** — see the build spec's phase list.
 
 ## Running it
 
@@ -64,6 +68,40 @@ drift apart.
 Thai text search uses trigram matching (`pg_trgm`), not `tsvector` — Postgres
 ships no Thai word-segmentation dictionary and Thai text has no spaces
 between words.
+
+## Importing the August workbook
+
+Requires Python 3.11+.
+
+```sh
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r scripts/requirements.txt
+psql "$DATABASE_URL" -f scripts/staging_schema.sql   # one-time: creates the staging schema
+
+python3 scripts/import_excel.py path/to/Work_Order_08_2026.xlsx
+```
+
+This stages work orders and log entries into a `staging` Postgres schema —
+nothing reaches production yet — and writes `review_needed.xlsx` next to the
+input file, listing every row that needs a look before promoting: genuine
+WO# collisions that touch a special category (not auto-split — see spec §6
+step 5), rows with no parseable date, unrecognised worker names, unexpected
+categories, and near-duplicate location spellings. Categories and locations
+themselves are upserted straight into the shared reference tables as they're
+encountered (§6 steps 9-10), since that's low-risk and needed for the
+foreign keys regardless of whether the batch of work orders is promoted.
+
+Sit with your cousin, resolve the `must_resolve` rows, re-run the script if
+anything needs to change (it truncates and re-stages each time), then
+promote:
+
+```sh
+psql "$DATABASE_URL" -f scripts/promote_staging.sql
+```
+
+which copies staging into production inside one transaction, prints the
+before/after counts to check against the spec's expectations (~350 work
+orders, 478 log entries from 336 numbers), and empties staging.
 
 ## Project layout
 

@@ -15,6 +15,13 @@
       "when": 1788384438272,
       "tag": "0001_trigram_and_status_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788384992803,
+      "tag": "0002_workers_name_unique",
+      "breakpoints": true
     }
   ]
 }

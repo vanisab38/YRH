@@ -35,7 +35,7 @@ export const users = pgTable('users', {
 // ---------------------------------------------------------------------------
 export const workers = pgTable('workers', {
   id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
+  name: text('name').notNull().unique(),
   fullName: text('full_name'),
   type: text('type').notNull(), // 'staff' | 'contractor' | 'other'
   isActive: boolean('is_active').notNull().default(true),
