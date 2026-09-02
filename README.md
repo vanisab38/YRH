@@ -32,7 +32,21 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   special-category jobs a worker opened (`lib/queries/admin-review.ts`).
   `app/page.tsx` is a placeholder home screen that proves the pipeline
   end to end; the real Today screen is Phase 4.
-- **Phase 4 onward** — see the build spec's phase list.
+- **Phase 4** — done. Today screen (opened-today / all-pending-oldest-first,
+  `+ เปิดงานใหม่`, admin review list wired in for real), new work order form
+  (searchable room field, category picker with colour badges, worker
+  assignment, priority), and work order detail with log-entry history and
+  `+ บันทึกงานวันนี้`. `wo_no` is generated server-side inside the insert
+  transaction with retry-on-collision, per §2. This is the minimum that
+  replaces the Excel.
+- **Phase 5 onward** — see the build spec's phase list.
+
+  **Known gap, not scoped to any phase:** there's no "create user" admin
+  screen yet (`db:seed:users` seeds dev accounts by hand — see Auth below),
+  and no UI for a worker or office user to edit a work order's category
+  after creation, even though `lib/permissions.ts` already implements that
+  rule (`canEditCategory` — own job, until first log entry). Worth folding
+  into the Admin screen whenever that gets built.
 
 ## Running it
 
