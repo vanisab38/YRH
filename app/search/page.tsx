@@ -134,6 +134,13 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         </div>
       )}
 
+      {hasAnyFilter && results.length === 0 && (
+        <p className="text-sm text-zinc-400">ไม่พบงานที่ตรงกับเงื่อนไข ลองคำค้นหรือตัวกรองอื่น</p>
+      )}
+      {!hasAnyFilter && (
+        <p className="text-sm text-zinc-400">พิมพ์คำค้นหรือเลือกตัวกรองด้านบนเพื่อเริ่มค้นหา</p>
+      )}
+
       <div className="flex flex-col gap-2">
         {results.map((wo) => (
           <Link

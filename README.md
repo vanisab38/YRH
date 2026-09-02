@@ -71,7 +71,20 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   configured" message instead of a 500 page when the env vars are unset —
   verified: an upload attempt against unset Supabase config shows a
   friendly Thai error with no stack trace and no orphaned database row.
-- **Phase 8 onward** — see the build spec's phase list.
+- **Phase 8** — done. Offline handling is deliberately lightweight, not a
+  full offline-first rebuild (staff lose signal in stairwells/basement
+  plant rooms, not for hours at a time): an `OfflineBanner`
+  (`useSyncExternalStore` on `navigator.onLine`, not `useState`+`useEffect`
+  — avoids a server/client mismatch and an extra render) makes it
+  unmistakable when a save won't go through, rather than a button that
+  silently does nothing. Empty states filled in across search (no query
+  yet / no results), room history (no room picked yet), and the ageing
+  report (nothing pending). Standard Next.js boundaries added: `loading.tsx`
+  (a spinner, not a blank screen, while `/search`, `/rooms`, `/reports/*`,
+  and `/work-orders/*` fetch), `error.tsx`, and a custom `not-found.tsx` —
+  all in Thai. Running the new system alongside the Excel for two weeks
+  before retiring it (per §8's closing line) is an operational step for
+  whoever administers this day to day, not something to build.
 
   **Known gap, not scoped to any phase:** there's no "create user" admin
   screen yet (`db:seed:users` seeds dev accounts by hand — see Auth below),
@@ -79,6 +92,23 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   after creation, even though `lib/permissions.ts` already implements that
   rule (`canEditCategory` — own job, until first log entry). Worth folding
   into the Admin screen whenever that gets built.
+
+**All 8 build phases are done.** Two things from the spec are explicitly
+*not* code and still need a person, not another phase:
+
+- **§9.1** — a one-sentence rule for when ล้างแอร์-type air-con cleaning is
+  paid (`แอร์` category) vs. routine (`งานประจำ`), so whoever keys a job
+  picks the same category the owner would. Worth settling with one month
+  of data and 22 categories, before six months of staff typing into this
+  system make the category the pay decision by default.
+- **§9.2** — confirm nothing besides แอร์/ยาแนว/โปรเจค should count as
+  special, before the Phase 6 special-work report becomes the thing
+  payroll is actually read from.
+- **review_needed.xlsx** (sent earlier, §6) — 36 rows from the real import
+  still need a decision with whoever owns the data: the two collisions
+  routed to manual review (2608025, 2608044), three date typos, one
+  duplicate log row, an unrecognised worker name, and some near-duplicate
+  location spellings.
 
 ## Running it
 

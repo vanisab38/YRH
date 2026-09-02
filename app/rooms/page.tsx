@@ -55,6 +55,7 @@ export default async function RoomHistoryPage({
       {code && !location && (
         <p className="text-sm text-zinc-500">ไม่พบห้อง/พื้นที่ &quot;{code}&quot;</p>
       )}
+      {!code && <p className="text-sm text-zinc-400">พิมพ์ชื่อห้องหรือพื้นที่เพื่อดูประวัติ</p>}
 
       {location && (
         <>

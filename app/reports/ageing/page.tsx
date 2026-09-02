@@ -41,6 +41,8 @@ export default async function AgeingReportPage() {
         </div>
       </div>
 
+      {total === 0 && <p className="text-sm text-zinc-400">ไม่มีงานค้าง — เคลียร์หมดแล้ว 🎉</p>}
+
       {buckets.map(
         (bucket) =>
           bucket.jobs.length > 0 && (

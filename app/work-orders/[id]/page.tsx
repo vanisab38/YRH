@@ -91,6 +91,8 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
         <h2 className="text-sm font-semibold text-zinc-700">รูปภาพ</h2>
         {photosUnavailable ? (
           <p className="text-sm text-zinc-400">ระบบจัดเก็บรูปภาพยังไม่ได้ตั้งค่า</p>
+        ) : photos.length === 0 ? (
+          <p className="text-sm text-zinc-400">ยังไม่มีรูปภาพ</p>
         ) : (
           <PhotoGallery photos={photos} />
         )}
