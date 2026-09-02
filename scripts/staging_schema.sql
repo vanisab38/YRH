@@ -15,7 +15,7 @@ CREATE SCHEMA IF NOT EXISTS staging;
 
 CREATE TABLE IF NOT EXISTS staging.work_orders (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  wo_no             text NOT NULL,
+  wo_no             text NOT NULL UNIQUE,
   legacy_wo_no      text,
   opened_date       date NOT NULL,
   category_id       uuid NOT NULL REFERENCES public.categories(id),

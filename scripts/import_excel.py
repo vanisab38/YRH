@@ -98,7 +98,18 @@ class ReviewItem:
     original_value: str = ""
 
 
+class YearOutOfRange(Exception):
+    def __init__(self, year: int, raw: str):
+        self.year = year
+        self.raw = raw
+        super().__init__(f"year {year} out of [2020, 2030] for '{raw}'")
+
+
 def parse_date(raw) -> date | None:
+    """Returns the parsed date, or None if unparseable. Raises YearOutOfRange
+    for a syntactically valid DD.MM.YYYY whose year is implausible (§6 step
+    6) — the caller decides row-by-row flag vs. whole-workbook failure; see
+    check_year_sanity() for the workbook-level version of that assertion."""
     if raw is None:
         return None
     if isinstance(raw, date):
@@ -108,13 +119,33 @@ def parse_date(raw) -> date | None:
     if not m:
         return None
     dd, mm, yyyy = (int(x) for x in m.groups())
-    year = yyyy
-    assert 2020 <= year <= 2030, (
-        f"Parsed year {year} out of [2020, 2030] range for '{s}' — looks like a "
-        "Buddhist-era date or bad cell; failing loudly rather than importing a "
-        "date 543 years out (§6 step 6)."
-    )
-    return date(year, mm, dd)
+    if not (2020 <= yyyy <= 2030):
+        raise YearOutOfRange(yyyy, s)
+    return date(yyyy, mm, dd)
+
+
+def check_year_sanity(rows: list[RawRow]) -> None:
+    """§6 step 6's assertion, applied at the workbook level: a handful of
+    rows with an implausible year are typos (flagged per-row for review,
+    see process()); most/all rows implausible means the whole sheet is
+    probably Buddhist Era or otherwise misread, which should fail loudly
+    rather than import 469 dates 543 years out one at a time."""
+    total = 0
+    out_of_range = 0
+    for r in rows:
+        s = str(r.date_raw).strip() if r.date_raw is not None else ""
+        if re.match(r"^\d{2}\.\d{2}\.\d{4}$", s):
+            total += 1
+            year = int(s[-4:])
+            if not (2020 <= year <= 2030):
+                out_of_range += 1
+    if total and out_of_range / total > 0.2:
+        raise AssertionError(
+            f"{out_of_range}/{total} dated rows have a year outside [2020, 2030] — "
+            "this looks like a systemic issue (Buddhist-era dates? wrong column?), "
+            "not a handful of typos. Failing loudly rather than importing dates "
+            "543 years out (§6 step 6)."
+        )
 
 
 def map_status(raw) -> str | None:
@@ -168,12 +199,17 @@ def infer_location_type_and_floor(code: str) -> tuple[str, int | None]:
 
 
 class Importer:
-    def __init__(self, conn):
+    def __init__(self, conn, raw_wo_numbers: set[str]):
         self.conn = conn
         self.review: list[ReviewItem] = []
         self.category_cache: dict[str, str] = {}
         self.location_cache: dict[str, str] = {}
         self.wo_seq_cache: dict[str, int] = {}
+        # Every raw WO# in the sheet, staged or not (§6 step 5: a generated
+        # number must never collide with a real historical number — including
+        # one excluded from this run, e.g. a manual-review-only collision —
+        # or it would silently shadow that job later).
+        self.raw_wo_numbers = raw_wo_numbers
         self.imported_user_id = self._fetch_imported_user_id()
 
     # -- reference data (public schema): upsert-as-you-go -------------------
@@ -250,12 +286,23 @@ class Importer:
             with self.conn.cursor() as cur:
                 cur.execute(
                     "SELECT COALESCE(MAX(CAST(RIGHT(wo_no, 3) AS INT)), 0) "
-                    "FROM staging.work_orders WHERE wo_no LIKE %s",
-                    (prefix + "%",),
+                    "FROM staging.work_orders WHERE wo_no LIKE %s "
+                    "UNION ALL "
+                    "SELECT COALESCE(MAX(CAST(RIGHT(wo_no, 3) AS INT)), 0) "
+                    "FROM work_orders WHERE wo_no LIKE %s",
+                    (prefix + "%", prefix + "%"),
                 )
-                self.wo_seq_cache[prefix] = cur.fetchone()[0]
-        self.wo_seq_cache[prefix] += 1
-        return f"{prefix}{self.wo_seq_cache[prefix]:03d}"
+                staged_max, prod_max = (r[0] for r in cur.fetchall())
+            raw_max = max(
+                (int(n[4:]) for n in self.raw_wo_numbers if n.startswith(prefix)),
+                default=0,
+            )
+            self.wo_seq_cache[prefix] = max(staged_max, prod_max, raw_max)
+        while True:
+            self.wo_seq_cache[prefix] += 1
+            candidate = f"{prefix}{self.wo_seq_cache[prefix]:03d}"
+            if candidate not in self.raw_wo_numbers:
+                return candidate
 
     # -- staging writes -------------------------------------------------------
     def insert_work_order(
@@ -274,6 +321,21 @@ class Importer:
         dated.sort(key=lambda r: (r.parsed_date, r.excel_row))
         opened_date = dated[0].parsed_date
         final_status = dated[-1].status
+
+        seen_dates: dict[date, RawRow] = {}
+        for r in dated:
+            if r.parsed_date in seen_dates:
+                self.review.append(
+                    ReviewItem(
+                        "must_resolve", wo_no, [seen_dates[r.parsed_date].excel_row, r.excel_row],
+                        f"Two rows for the same date ({r.parsed_date}) in this work order — "
+                        "likely a duplicate entry, not two days of work. Both were imported as "
+                        "separate log entries, which will double-count the day in reports; "
+                        "delete the extra one if it's a duplicate.",
+                    )
+                )
+            else:
+                seen_dates[r.parsed_date] = r
 
         closed_date = None
         for r in dated:
@@ -372,8 +434,20 @@ def read_rows(path: str) -> list[RawRow]:
 
 
 def process(rows: list[RawRow], importer: Importer) -> dict:
+    check_year_sanity(rows)
     for r in rows:
-        r.parsed_date = parse_date(r.date_raw)
+        try:
+            r.parsed_date = parse_date(r.date_raw)
+        except YearOutOfRange as e:
+            r.parsed_date = None
+            importer.review.append(
+                ReviewItem(
+                    "must_resolve", r.wo_no, r.excel_row,
+                    f"Date '{e.raw}' has an implausible year ({e.year}) — likely a "
+                    "typo. No log entry created; fix the date and re-run.",
+                    e.raw,
+                )
+            )
         r.status = map_status(r.status_raw)
         r.workers, r.unmatched_worker_text = split_workers(r.by_raw)
         if r.status is None:
@@ -487,13 +561,14 @@ def main():
         sys.exit(1)
 
     rows = read_rows(xlsx_path)
+    raw_wo_numbers = {r.wo_no for r in rows if re.fullmatch(r"\d{7}", r.wo_no)}
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = False
     try:
         with conn.cursor() as cur:
             cur.execute("TRUNCATE staging.log_entry_workers, staging.wo_log_entries, staging.work_orders")
-        importer = Importer(conn)
+        importer = Importer(conn, raw_wo_numbers)
         stats = process(rows, importer)
         conn.commit()
     except Exception:
