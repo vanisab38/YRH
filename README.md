@@ -85,30 +85,74 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   all in Thai. Running the new system alongside the Excel for two weeks
   before retiring it (per §8's closing line) is an operational step for
   whoever administers this day to day, not something to build.
+- **Admin: users and categories** — done. §3 describes an Admin screen but
+  the phase list (§8) never assigned it a phase, so the 8-phase build
+  reached "all phases done" without it — a real gap, not a skipped step,
+  and a go-live blocker: without it, only the accounts `db:seed:users`
+  creates by hand can log in, so the property owner had no way to create
+  or manage her own staff accounts. `/admin/users`: create, set role, link
+  to a `workers` record, deactivate, reset password. `/admin/categories`:
+  `is_special`/colour/group/active, plus a new `help_text` column
+  (`db/migrations/0003_categories_help_text.sql`) that renders live under
+  the category picker on the New Work Order form — the mechanism §9.1
+  needs once someone decides the actual sentence.
 
-  **Known gap, not scoped to any phase:** there's no "create user" admin
-  screen yet (`db:seed:users` seeds dev accounts by hand — see Auth below),
-  and no UI for a worker or office user to edit a work order's category
-  after creation, even though `lib/permissions.ts` already implements that
-  rule (`canEditCategory` — own job, until first log entry). Worth folding
-  into the Admin screen whenever that gets built.
+  Building and testing this surfaced two real bugs in the auth/session
+  work from Phase 3, now fixed: `verifySession()` (`lib/dal.ts`) trusted
+  the session cookie's baked-in claims for the cookie's full 30-day life,
+  so deactivating a user or changing their role had no effect until they
+  happened to log out — now it re-checks the user against the database on
+  every request (one indexed lookup, cheap at this scale). That fix then
+  collided with `proxy.ts`'s "already authenticated → bounce away from
+  /login" rule: a deactivated user's still-valid cookie would get bounced
+  from /login back to /, which the DB check would immediately redirect
+  back to /login — an infinite loop, caught by testing the deactivate
+  action against a live session rather than only against the database.
+  Both are fixed and verified: deactivation and role changes now take
+  effect on the very next request, with no crash and no loop.
 
-**All 8 build phases are done.** Two things from the spec are explicitly
-*not* code and still need a person, not another phase:
+  **Still a gap, found while building this:** §2 specifies an audit
+  trigger on `work_orders` and `wo_log_entries`, called out specifically
+  for category changes ("the one change worth being able to explain
+  later") — the `audit_log` table exists (Phase 1) but nothing has ever
+  written to it. Category edits in `/admin/categories` and any future
+  work-order-level category edit are exactly the case this table was
+  built for. Worth its own pass.
 
-- **§9.1** — a one-sentence rule for when ล้างแอร์-type air-con cleaning is
-  paid (`แอร์` category) vs. routine (`งานประจำ`), so whoever keys a job
-  picks the same category the owner would. Worth settling with one month
-  of data and 22 categories, before six months of staff typing into this
-  system make the category the pay decision by default.
+**Two verifications, cheap to state plainly:**
+
+- **Log entries: 442, not 478.** The spec's own estimate ("expect 336
+  numbers in, ~350 work orders out, 478 log entries") was written before
+  the import ran. 346 work orders is right in line with that. 442 log
+  entries is *correct*, not a shortfall — already reconciled during the
+  real import (see the Phase 2 commits): 477 rows were read (1 dropped as
+  a repeated header), and 35 of those were deliberately excluded rather
+  than guessed at — 21 + 9 rows from the two collisions routed to manual
+  review (2608025, 2608044), 2 rows with `ค้าง` instead of a date, and 3
+  rows with an implausible year. 477 − 35 = 442, and every excluded row is
+  itemized in `review_needed.xlsx`.
+- **Not deployed anywhere.** No `vercel.json`, no `.vercel/`, no hosting
+  connected — this has only ever run locally (`npm run dev`) inside the
+  sandbox that built it. It has never been reachable from a phone, and the
+  two-week parallel run described in §8's closing line can't start until
+  it is. Deploying needs a hosting decision and account access a session
+  like this one doesn't have — Vercel (matching §7's default stack) is
+  the natural choice given the Next.js/Postgres stack already in place.
+
+**Then the critical path is no longer code.** Three things need a person,
+not another build session:
+
+- **review_needed.xlsx** (§6) — 36 rows from the real import: the two
+  collisions routed to manual review (2608025, 2608044), three date
+  typos, one duplicate log row, an unrecognised worker name, and some
+  near-duplicate location spellings (`ห้องน้ำคนขับ` / `ห้องน้ำคนขับรถ`).
+- **§9.1** — the one-sentence rule for when ล้างแอร์-type air-con cleaning
+  is paid (`แอร์`) vs. routine (`งานประจำ`) — now has a place to live
+  (`/admin/categories` → แอร์ → "ข้อความช่วยเหลือ") the moment someone
+  states it.
 - **§9.2** — confirm nothing besides แอร์/ยาแนว/โปรเจค should count as
-  special, before the Phase 6 special-work report becomes the thing
-  payroll is actually read from.
-- **review_needed.xlsx** (sent earlier, §6) — 36 rows from the real import
-  still need a decision with whoever owns the data: the two collisions
-  routed to manual review (2608025, 2608044), three date typos, one
-  duplicate log row, an unrecognised worker name, and some near-duplicate
-  location spellings.
+  special, before the special-work report becomes what payroll is
+  actually read from.
 
 ## Running it
 

@@ -22,6 +22,13 @@
       "when": 1788384992803,
       "tag": "0002_workers_name_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788391873347,
+      "tag": "0003_categories_help_text",
+      "breakpoints": true
     }
   ]
 }

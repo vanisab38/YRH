@@ -62,6 +62,10 @@ export const categories = pgTable('categories', {
   groupId: uuid('group_id').references(() => categoryGroups.id),
   isSpecial: boolean('is_special').notNull().default(false),
   colour: text('colour'),
+  // §9.1: "one sentence [the owner] can state, shown as help text under the
+  // category dropdown, so whoever keys the row picks the same category she
+  // would" — e.g. the ล้างแอร์ scheduled-vs-guest-complaint distinction.
+  helpText: text('help_text'),
   isActive: boolean('is_active').notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
 });

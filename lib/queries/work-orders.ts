@@ -70,6 +70,7 @@ export async function getActiveCategories() {
       nameTh: categories.nameTh,
       isSpecial: categories.isSpecial,
       colour: categories.colour,
+      helpText: categories.helpText,
     })
     .from(categories)
     .where(eq(categories.isActive, true))

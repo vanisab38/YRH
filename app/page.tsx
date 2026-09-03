@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
-import { canViewReports } from '@/lib/permissions';
+import { canViewReports, canManageAdmin } from '@/lib/permissions';
 import { getWorkerOpenedSpecialWorkOrders } from '@/lib/queries/admin-review';
 import { getTodayOpenedWorkOrders, getPendingWorkOrdersOldestFirst } from '@/lib/queries/work-orders';
 import { logout } from '@/app/actions/auth';
@@ -53,6 +53,11 @@ export default async function Home() {
         {canViewReports(session.role) && (
           <Link href="/reports" className="hover:text-zinc-900">
             📊 รายงาน
+          </Link>
+        )}
+        {canManageAdmin(session.role) && (
+          <Link href="/admin" className="hover:text-zinc-900">
+            ⚙️ ตั้งค่าระบบ
           </Link>
         )}
       </nav>

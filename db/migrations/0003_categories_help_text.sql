@@ -1,0 +1,1 @@
+ALTER TABLE "categories" ADD COLUMN "help_text" text;

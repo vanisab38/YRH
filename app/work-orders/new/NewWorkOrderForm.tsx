@@ -1,10 +1,10 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { createWorkOrder, type ActionState } from '@/lib/actions/work-orders';
 
 type Location = { id: string; code: string; type: string };
-type Category = { id: string; nameTh: string; isSpecial: boolean; colour: string | null };
+type Category = { id: string; nameTh: string; isSpecial: boolean; colour: string | null; helpText: string | null };
 type Worker = { id: string; name: string; type: string };
 
 export function NewWorkOrderForm({
@@ -17,6 +17,8 @@ export function NewWorkOrderForm({
   workers: Worker[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createWorkOrder, undefined);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
 
   return (
     <form action={action} className="flex flex-col gap-5">
@@ -48,7 +50,14 @@ export function NewWorkOrderForm({
               key={cat.id}
               className="flex items-center gap-2 rounded-md px-2 py-2 text-sm has-checked:bg-zinc-100"
             >
-              <input type="radio" name="categoryId" value={cat.id} required className="accent-zinc-900" />
+              <input
+                type="radio"
+                name="categoryId"
+                value={cat.id}
+                required
+                className="accent-zinc-900"
+                onChange={() => setSelectedCategoryId(cat.id)}
+              />
               {cat.isSpecial && cat.colour && (
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: cat.colour }} />
               )}
@@ -57,6 +66,12 @@ export function NewWorkOrderForm({
             </label>
           ))}
         </div>
+        {/* §9.1: "one sentence [the owner] can state, shown as help text
+            under the category dropdown, so whoever keys the row picks the
+            same category she would" — set per category in /admin/categories. */}
+        {selectedCategory?.helpText && (
+          <p className="rounded-md bg-zinc-50 p-2 text-xs text-zinc-600">💡 {selectedCategory.helpText}</p>
+        )}
       </fieldset>
 
       <div className="flex flex-col gap-1.5">
