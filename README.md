@@ -184,9 +184,14 @@ needs a specific instruction for them once that date is known.
 connected — this has only ever run locally (`npm run dev`) inside the
 sandbox that built it. It has never been reachable from a phone, and the
 two-week parallel run described in §8's closing line can't start until
-it is. Deploying needs a hosting decision and account access a session
-like this one doesn't have — Vercel (matching §7's default stack) is
-the natural choice given the Next.js/Postgres stack already in place.
+it is. Vercel (matching §7's default stack) is the natural choice given
+the Next.js/Postgres stack already in place — but the build sandbox's own
+network policy blocks outbound access to `api.vercel.com` (403, confirmed
+via the sandbox's proxy diagnostics), so the deploy itself has to run from
+a real machine with Vercel account access, not from inside this session.
+See `DEPLOY.md` for exact steps — the app builds cleanly
+(`npm run build`, 22 routes, TypeScript clean) and is ready to go the
+moment someone runs them.
 
 **Then the critical path is no longer code.** Four things need a person,
 not another build session:
@@ -230,9 +235,13 @@ cookie — see `lib/session.ts`), three roles enforced in `lib/permissions.ts`
 per the spec's §2 table. `proxy.ts` (Next.js 16 renamed `middleware.ts` to
 `proxy.ts`; same mechanism) redirects unauthenticated requests to `/login`.
 
-There's no "create user" admin screen yet, so `npm run db:seed:users`
-creates dev/test accounts — **all use password `changeme123`, change or
-remove before any real deployment**:
+`/admin/users` (admin role only) creates accounts, sets roles, links a
+worker record, and deactivates access — see "Status" above for how it
+came to exist. For local dev,
+`npm run db:seed:users` is a shortcut that creates test accounts —
+**all use password `changeme123`, change or remove before any real
+deployment** (see `DEPLOY.md` step 4 for how to bootstrap the first real
+admin account in production without seeding these):
 
 | username | role | linked worker |
 |---|---|---|
