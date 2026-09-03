@@ -8,6 +8,7 @@ import { workOrders, woAssignments, woLogEntries, logEntryWorkers, locations } f
 import { verifySession } from '@/lib/dal';
 import { canAddLogEntryToJob } from '@/lib/permissions';
 import { bangkokToday } from '@/lib/dates';
+import { setAuditUser } from '@/lib/db-audit';
 import { getWorkOrderDetail, isWorkerAssigned } from '@/lib/queries/work-orders';
 
 export type ActionState = { error: string } | undefined;
@@ -18,7 +19,8 @@ export type ActionState = { error: string } | undefined;
 // violation (Postgres code 23505) rather than trusting the computed max,
 // since two requests can race between the SELECT and the INSERT.
 async function insertWithGeneratedWoNo(
-  insertRow: (woNo: string) => Promise<{ id: string }>
+  insertRow: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], woNo: string) => Promise<{ id: string }>,
+  userId: string
 ): Promise<string> {
   const today = bangkokToday();
   const prefix = today.slice(2, 4) + today.slice(5, 7); // YYMM
@@ -30,7 +32,10 @@ async function insertWithGeneratedWoNo(
       .where(like(workOrders.woNo, `${prefix}%`));
     const woNo = `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
     try {
-      const { id } = await insertRow(woNo);
+      const { id } = await db.transaction(async (tx) => {
+        await setAuditUser(tx, userId);
+        return insertRow(tx, woNo);
+      });
       return id;
     } catch (err) {
       const pgCode = (err as { code?: string } | null)?.code;
@@ -59,28 +64,26 @@ export async function createWorkOrder(_prevState: ActionState, formData: FormDat
     return { error: `ไม่พบห้อง/พื้นที่ "${locationCode}" — เลือกจากรายการที่มีอยู่` };
   }
 
-  const workOrderId = await insertWithGeneratedWoNo(async (woNo) => {
-    return db.transaction(async (tx) => {
-      const [wo] = await tx
-        .insert(workOrders)
-        .values({
-          woNo,
-          openedDate: bangkokToday(),
-          categoryId,
-          locationId: location.id,
-          description,
-          status: 'pending',
-          priority,
-          createdBy: session.userId,
-        })
-        .returning({ id: workOrders.id });
+  const workOrderId = await insertWithGeneratedWoNo(async (tx, woNo) => {
+    const [wo] = await tx
+      .insert(workOrders)
+      .values({
+        woNo,
+        openedDate: bangkokToday(),
+        categoryId,
+        locationId: location.id,
+        description,
+        status: 'pending',
+        priority,
+        createdBy: session.userId,
+      })
+      .returning({ id: workOrders.id });
 
-      if (workerIds.length) {
-        await tx.insert(woAssignments).values(workerIds.map((workerId) => ({ workOrderId: wo.id, workerId })));
-      }
-      return wo;
-    });
-  });
+    if (workerIds.length) {
+      await tx.insert(woAssignments).values(workerIds.map((workerId) => ({ workOrderId: wo.id, workerId })));
+    }
+    return wo;
+  }, session.userId);
 
   redirect(`/work-orders/${workOrderId}`);
 }
@@ -110,14 +113,18 @@ export async function addLogEntry(_prevState: ActionState, formData: FormData): 
 
   // status/closed_date on work_orders is kept in sync by a database trigger
   // (db/migrations/0001_trigram_and_status_trigger.sql) — no manual update here.
-  const [logEntry] = await db
-    .insert(woLogEntries)
-    .values({ workOrderId, logDate, note, statusAfter, enteredBy: session.userId })
-    .returning({ id: woLogEntries.id });
+  await db.transaction(async (tx) => {
+    await setAuditUser(tx, session.userId);
 
-  if (workerIds.length) {
-    await db.insert(logEntryWorkers).values(workerIds.map((workerId) => ({ logEntryId: logEntry.id, workerId })));
-  }
+    const [logEntry] = await tx
+      .insert(woLogEntries)
+      .values({ workOrderId, logDate, note, statusAfter, enteredBy: session.userId })
+      .returning({ id: woLogEntries.id });
+
+    if (workerIds.length) {
+      await tx.insert(logEntryWorkers).values(workerIds.map((workerId) => ({ logEntryId: logEntry.id, workerId })));
+    }
+  });
 
   revalidatePath(`/work-orders/${workOrderId}`);
   revalidatePath('/');

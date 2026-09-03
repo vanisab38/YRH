@@ -6,6 +6,26 @@ import { workers, categories, categoryGroups, locations, users } from './schema'
 import { sql } from 'drizzle-orm';
 
 async function main() {
+  // --- system user for the import script (§6 step 11), created first so
+  // every other write in this script can be attributed to it — the audit
+  // trigger (migration 0004) requires app.current_user_id to be set before
+  // any write to categories/work_orders/wo_log_entries. is_local=false
+  // (session-scoped, not transaction-scoped) since this script isn't a
+  // pooled web request — it's fine to hold for the script's one connection.
+  const [importedUser] = await db
+    .insert(users)
+    .values({
+      username: 'imported',
+      passwordHash: '!', // never a valid bcrypt hash — this account cannot log in
+      displayName: 'Imported from Excel',
+      role: 'admin',
+      isActive: false,
+    })
+    .onConflictDoUpdate({ target: users.username, set: { username: sql`excluded.username` } })
+    .returning({ id: users.id });
+
+  await db.execute(sql`select set_config('app.current_user_id', ${importedUser.id}, false)`);
+
   // --- category_groups (§2 category_groups) ---------------------------------
   const groupRows = await db
     .insert(categoryGroups)
@@ -127,18 +147,6 @@ async function main() {
   ];
 
   await db.insert(locations).values(locationRows).onConflictDoNothing();
-
-  // --- system user for the import script (§6 step 11) ------------------------
-  await db
-    .insert(users)
-    .values({
-      username: 'imported',
-      passwordHash: '!', // never a valid bcrypt hash — this account cannot log in
-      displayName: 'Imported from Excel',
-      role: 'admin',
-      isActive: false,
-    })
-    .onConflictDoNothing();
 
   console.log('Seed complete.');
   process.exit(0);

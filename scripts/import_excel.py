@@ -211,6 +211,13 @@ class Importer:
         # or it would silently shadow that job later).
         self.raw_wo_numbers = raw_wo_numbers
         self.imported_user_id = self._fetch_imported_user_id()
+        # Audit trigger (db/migrations/0004_audit_trigger.sql) requires this
+        # before any write to categories/work_orders/wo_log_entries — this
+        # script only ever writes categories directly (work orders go to the
+        # staging schema, which the trigger doesn't cover); promote_staging.sql
+        # sets it again before promoting into production.
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT set_config('app.current_user_id', %s, false)", (self.imported_user_id,))
 
     # -- reference data (public schema): upsert-as-you-go -------------------
     def _fetch_imported_user_id(self) -> str:

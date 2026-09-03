@@ -29,6 +29,13 @@
       "when": 1788391873347,
       "tag": "0003_categories_help_text",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788428860293,
+      "tag": "0004_audit_trigger",
+      "breakpoints": true
     }
   ]
 }

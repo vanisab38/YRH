@@ -7,6 +7,11 @@
 
 BEGIN;
 
+-- Audit trigger (db/migrations/0004_audit_trigger.sql) requires this before
+-- any write to work_orders/wo_log_entries — attribute the promoted rows to
+-- the same system user the import script used to stage them.
+SELECT set_config('app.current_user_id', (SELECT id::text FROM users WHERE username = 'imported'), true);
+
 INSERT INTO work_orders
   (id, wo_no, legacy_wo_no, opened_date, category_id, location_id,
    description, status, priority, created_by, created_at, closed_date, closed_by, notes)

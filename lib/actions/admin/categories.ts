@@ -7,6 +7,7 @@ import { db } from '@/db';
 import { categories } from '@/db/schema';
 import { verifySession } from '@/lib/dal';
 import { canManageAdmin } from '@/lib/permissions';
+import { setAuditUser } from '@/lib/db-audit';
 
 export type ActionState = { error: string } | undefined;
 
@@ -28,10 +29,13 @@ export async function updateCategory(_prevState: ActionState, formData: FormData
     return { error: 'รหัสสีต้องเป็นรูปแบบ #RRGGBB เช่น #00B0F0' };
   }
 
-  await db
-    .update(categories)
-    .set({ isSpecial, colour: colourRaw || null, groupId, helpText, isActive })
-    .where(eq(categories.id, id));
+  await db.transaction(async (tx) => {
+    await setAuditUser(tx, session.userId);
+    await tx
+      .update(categories)
+      .set({ isSpecial, colour: colourRaw || null, groupId, helpText, isActive })
+      .where(eq(categories.id, id));
+  });
 
   revalidatePath('/admin/categories');
   revalidatePath('/work-orders/new');
