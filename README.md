@@ -119,33 +119,87 @@ Built with Next.js (App Router, TypeScript), Postgres, and Drizzle ORM.
   work-order-level category edit are exactly the case this table was
   built for. Worth its own pass.
 
-**Two verifications, cheap to state plainly:**
+- **Audit trigger** — done (see the latest commit). §2 (revised) called
+  the table-with-no-trigger out specifically: an audit table nothing
+  writes to is worse than none, because it looks like coverage.
+  `db/migrations/0004_audit_trigger.sql` now writes to it on every insert/
+  update/delete on `work_orders`, `wo_log_entries`, and `categories`
+  (broader than the literal table list — "or on the category record
+  itself" in the revised spec is explicit that `is_special`/`help_text`
+  edits need the trail too). Verified end to end: a worker opening a job
+  and logging it done produced two correctly-attributed audit rows plus a
+  third from the Phase 1 status-sync trigger's cascading update, all in
+  one transaction; an admin's category edit produced an old→new pair; and
+  a raw SQL write with no `app.current_user_id` set fails loudly instead
+  of silently skipping the audit row.
 
-- **Log entries: 442, not 478.** The spec's own estimate ("expect 336
-  numbers in, ~350 work orders out, 478 log entries") was written before
-  the import ran. 346 work orders is right in line with that. 442 log
-  entries is *correct*, not a shortfall — already reconciled during the
-  real import (see the Phase 2 commits): 477 rows were read (1 dropped as
-  a repeated header), and 35 of those were deliberately excluded rather
-  than guessed at — 21 + 9 rows from the two collisions routed to manual
-  review (2608025, 2608044), 2 rows with `ค้าง` instead of a date, and 3
-  rows with an implausible year. 477 − 35 = 442, and every excluded row is
-  itemized in `review_needed.xlsx`.
-- **Not deployed anywhere.** No `vercel.json`, no `.vercel/`, no hosting
-  connected — this has only ever run locally (`npm run dev`) inside the
-  sandbox that built it. It has never been reachable from a phone, and the
-  two-week parallel run described in §8's closing line can't start until
-  it is. Deploying needs a hosting decision and account access a session
-  like this one doesn't have — Vercel (matching §7's default stack) is
-  the natural choice given the Next.js/Postgres stack already in place.
+**§6's reconciliation, in the exact form the revised spec asks for** —
+running `python3 scripts/import_excel.py` now prints this table (and
+raises rather than promotes if it doesn't balance exactly):
 
-**Then the critical path is no longer code.** Three things need a person,
+| Reason | Rows |
+|---|---:|
+| Repeated header rows | 1 |
+| `ค้าง` in the date cell | 2 |
+| Year outside 2020–2030 | 3 |
+| Held for manual collision review (deferred, not discarded) | 30 |
+| Unrecognised status value | 0 |
+| Unmatched worker name — **not excluded**, see note below | 0 |
+| **Total excluded** | **36** |
+
+478 rows read (including the repeated header) − 36 excluded = **442**,
+which is exactly what's staged and promoted. The spec's own pre-import
+estimate ("478 log entries") was written before anything was excluded —
+442 is the reconciled, correct figure, not a shortfall.
+
+*Unmatched worker name is 0 by deliberate design, not because none
+occurred* (`WO 2608195` has one) — that row still becomes a log entry
+with its date/status/other-workers intact, just without the unmatched
+name attributed, flagged `must_resolve` in `review_needed.xlsx`. Dropping
+the whole row would have thrown away more than it saved.
+
+**Does any excluded row belong to a แอร์/ยาแนว/โปรเจค work order? Yes —
+7 of the 36**, and one of those isn't a partial gap, it's a complete one:
+
+| Row | WO# | Category | Why excluded |
+|---|---|---|---|
+| 2 | 2606003 | โปรเจค | `ค้าง` in date cell — **whole job, only row, not in the database at all** |
+| 3 | 2606004 | โปรเจค | `ค้าง` in date cell — **whole job, only row, not in the database at all** |
+| 162 | 2608025 | ยาแนว | Deferred to manual collision review |
+| 63 | 2608044 | แอร์ | Deferred to manual collision review |
+| 113, 122 | 2608044 | ยาแนว | Deferred to manual collision review |
+| 387 | 2608262 | โปรเจค | Implausible year (typo) — the WO itself *is* in the database via its other row; only this one day is missing |
+
+**2606003 and 2606004 are the two roof-waterproofing jobs §4.3 names
+explicitly** ("August carries jobs from June... those need to be
+visible") — and right now they aren't: they don't exist in this
+database at all, so they're absent from the ageing report, search, and
+room history alike, not merely under-counted. Nothing to guess here —
+the date cell holds no actual date, and inventing one (even "sometime in
+June") isn't this session's call to make. Someone who knows or can find
+the real opened date needs to enter these two by hand, or the import
+needs a specific instruction for them once that date is known.
+
+**Not deployed anywhere.** No `vercel.json`, no `.vercel/`, no hosting
+connected — this has only ever run locally (`npm run dev`) inside the
+sandbox that built it. It has never been reachable from a phone, and the
+two-week parallel run described in §8's closing line can't start until
+it is. Deploying needs a hosting decision and account access a session
+like this one doesn't have — Vercel (matching §7's default stack) is
+the natural choice given the Next.js/Postgres stack already in place.
+
+**Then the critical path is no longer code.** Four things need a person,
 not another build session:
 
-- **review_needed.xlsx** (§6) — 36 rows from the real import: the two
-  collisions routed to manual review (2608025, 2608044), three date
-  typos, one duplicate log row, an unrecognised worker name, and some
-  near-duplicate location spellings (`ห้องน้ำคนขับ` / `ห้องน้ำคนขับรถ`).
+- **The two missing June jobs (2606003, 2606004)** — need their real
+  opened dates from whoever has the paper trail or remembers, entered by
+  hand; §4.3's ageing report is incomplete without them.
+- **review_needed.xlsx** (§6) — the rest of the 36 rows: the two
+  collisions deferred to manual review (2608025, 2608044 — re-run the
+  import after resolving them, or those jobs stay short of days), three
+  date typos, one duplicate log row, an unrecognised worker name, and
+  some near-duplicate location spellings (`ห้องน้ำคนขับ` /
+  `ห้องน้ำคนขับรถ`).
 - **§9.1** — the one-sentence rule for when ล้างแอร์-type air-con cleaning
   is paid (`แอร์`) vs. routine (`งานประจำ`) — now has a place to live
   (`/admin/categories` → แอร์ → "ข้อความช่วยเหลือ") the moment someone
@@ -259,12 +313,22 @@ python3 scripts/import_excel.py path/to/Work_Order_08_2026.xlsx
 This stages work orders and log entries into a `staging` Postgres schema —
 nothing reaches production yet — and writes `review_needed.xlsx` next to the
 input file, listing every row that needs a look before promoting: genuine
-WO# collisions that touch a special category (not auto-split — see spec §6
-step 5), rows with no parseable date, unrecognised worker names, unexpected
-categories, and near-duplicate location spellings. Categories and locations
-themselves are upserted straight into the shared reference tables as they're
-encountered (§6 steps 9-10), since that's low-risk and needed for the
-foreign keys regardless of whether the batch of work orders is promoted.
+WO# collisions that touch a special category (deferred, not auto-split —
+see spec §6 step 5), rows with no parseable date, unrecognised worker
+names, unexpected categories, and near-duplicate location spellings.
+Categories and locations themselves are upserted straight into the shared
+reference tables as they're encountered (§6 steps 9-10), since that's
+low-risk and needed for the foreign keys regardless of whether the batch of
+work orders is promoted.
+
+It also prints a reconciliation table — `rows_read − Σ(exclusions by
+reason) = rows_loaded`, every exclusion reason enumerated — and **raises
+rather than lets you promote if it doesn't balance exactly**: some row
+would be silently dropped for a reason the script isn't accounting for,
+which §6 (revised) is explicit is not acceptable ("a silently dropped row
+becomes a silently wrong pay figure later"). It also flags whether any
+excluded row belongs to a แอร์/ยาแนว/โปรเจค work order — see the reconciled
+numbers for the real August file under [Status](#status) above.
 
 Sit with your cousin, resolve the `must_resolve` rows, re-run the script if
 anything needs to change (it truncates and re-stages each time), then
@@ -275,8 +339,7 @@ psql "$DATABASE_URL" -f scripts/promote_staging.sql
 ```
 
 which copies staging into production inside one transaction, prints the
-before/after counts to check against the spec's expectations (~350 work
-orders, 478 log entries from 336 numbers), and empties staging.
+before/after counts, and empties staging.
 
 ## Project layout
 

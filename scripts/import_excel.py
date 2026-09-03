@@ -40,6 +40,10 @@ CATEGORY_CORRECTIONS = {
     "2608007": ("ล้างแอร์", "งานประจำ", "Miscategorised; confirmed not paid"),
 }
 
+# §2: the only three paid categories — used solely to flag, in the
+# reconciliation table, whether an excluded row cost a special-work day.
+SPECIAL_CATEGORIES = {"แอร์", "ยาแนว", "โปรเจค"}
+
 # §6 step 5: WO# 2608131 is a hand-resolved exception, hard-coded rather than
 # generalised — one job, category แอร์, all 7 rows become log entries.
 HARDCODED_MERGE_WO = "2608131"
@@ -87,6 +91,10 @@ class RawRow:
     status: str | None = None  # 'pending' | 'done'
     workers: list[str] = field(default_factory=list)
     unmatched_worker_text: str | None = None
+    # Set only when parsed_date ends up None, so the reconciliation table
+    # (§6) can bucket "ค้าง in the date cell" separately from "year outside
+    # 2020-2030" instead of lumping every dateless row together.
+    date_exclusion_reason: str | None = None  # 'kaang_date' | 'year_out_of_range'
 
 
 @dataclass
@@ -205,6 +213,11 @@ class Importer:
         self.category_cache: dict[str, str] = {}
         self.location_cache: dict[str, str] = {}
         self.wo_seq_cache: dict[str, int] = {}
+        # §6 reconciliation table: every row excluded from becoming a log
+        # entry, tagged with a canonical reason so rows_read - Σ(exclusions)
+        # = rows_loaded can be shown by reason, not just as a bare total.
+        # (excel_row, wo_no, reason_category, category_th_at_exclusion_time)
+        self.excluded_rows: list[tuple[int, str, str, str]] = []
         # Every raw WO# in the sheet, staged or not (§6 step 5: a generated
         # number must never collide with a real historical number — including
         # one excluded from this run, e.g. a manual-review-only collision —
@@ -324,6 +337,10 @@ class Importer:
                     "contains 'ค้าง' or similar) — cannot set opened_date. Not imported.",
                 )
             )
+            for r in rows:
+                self.excluded_rows.append(
+                    (r.excel_row, wo_no, r.date_exclusion_reason or "kaang_date", category_th)
+                )
             return 0
         dated.sort(key=lambda r: (r.parsed_date, r.excel_row))
         opened_date = dated[0].parsed_date
@@ -405,13 +422,22 @@ class Importer:
                         "entry created for this row.", str(r.date_raw),
                     )
                 )
+                self.excluded_rows.append(
+                    (r.excel_row, wo_no, r.date_exclusion_reason or "kaang_date", category_th)
+                )
         return len(dated)
 
 
-def read_rows(path: str) -> list[RawRow]:
+def read_rows(path: str) -> tuple[list[RawRow], int]:
+    """Returns (rows, header_rows_dropped). header_rows_dropped counts only
+    rows that carried an actual repeated-header marker — not the hundreds of
+    genuinely blank formatting rows past the real data range (those were
+    never part of the sheet's 478 data rows to begin with, so they don't
+    belong in the §6 reconciliation as an "excluded" row)."""
     wb = openpyxl.load_workbook(path, data_only=True)
     sheet = wb.worksheets[0]
     rows: list[RawRow] = []
+    header_rows_dropped = 0
     for excel_row_idx, row in enumerate(
         sheet.iter_rows(min_row=2, min_col=1, max_col=8, values_only=True), start=2
     ):
@@ -420,10 +446,11 @@ def read_rows(path: str) -> list[RawRow]:
         )[:8]
 
         wo_no_s = nfc(wo_no) if wo_no is not None else ""
-        if not wo_no_s or wo_no_s in HEADER_MARKERS:
-            continue  # §6 step 2: empty WO# or repeated header row
-        if nfc(date_raw) == "Date" or nfc(status) == "Status":
-            continue  # repeated header row detected via a different column
+        if wo_no_s in HEADER_MARKERS or nfc(date_raw) == "Date" or nfc(status) == "Status":
+            header_rows_dropped += 1
+            continue  # §6 step 2: repeated header row
+        if not wo_no_s:
+            continue  # genuinely blank row — not one of the sheet's 478 data rows
 
         rows.append(
             RawRow(
@@ -437,7 +464,7 @@ def read_rows(path: str) -> list[RawRow]:
                 by_raw=nfc(by) if by else "",
             )
         )
-    return rows
+    return rows, header_rows_dropped
 
 
 def process(rows: list[RawRow], importer: Importer) -> dict:
@@ -445,8 +472,11 @@ def process(rows: list[RawRow], importer: Importer) -> dict:
     for r in rows:
         try:
             r.parsed_date = parse_date(r.date_raw)
+            if r.parsed_date is None:
+                r.date_exclusion_reason = "kaang_date"
         except YearOutOfRange as e:
             r.parsed_date = None
+            r.date_exclusion_reason = "year_out_of_range"
             importer.review.append(
                 ReviewItem(
                     "must_resolve", r.wo_no, r.excel_row,
@@ -465,6 +495,7 @@ def process(rows: list[RawRow], importer: Importer) -> dict:
                     r.status_raw,
                 )
             )
+            importer.excluded_rows.append((r.excel_row, r.wo_no, "unrecognised_status", r.category_raw))
 
     groups: dict[str, list[RawRow]] = {}
     for r in rows:
@@ -482,9 +513,15 @@ def process(rows: list[RawRow], importer: Importer) -> dict:
                 ReviewItem(
                     "must_resolve", wo_no, [r.excel_row for r in group_rows],
                     "Genuine WO# collision touching a special (paid) category — "
-                    "requires manual review before import, not auto-split (§6 step 5).",
+                    "requires manual review before import, not auto-split (§6 step 5). "
+                    "DEFERRED, not discarded: re-run this script after resolving so these "
+                    "rows are staged, or these jobs stay permanently short of days.",
                 )
             )
+            for r in group_rows:
+                importer.excluded_rows.append(
+                    (r.excel_row, wo_no, "manual_collision_review", r.category_raw)
+                )
             continue
 
         if wo_no == HARDCODED_MERGE_WO:
@@ -567,7 +604,7 @@ def main():
         print("DATABASE_URL is not set", file=sys.stderr)
         sys.exit(1)
 
-    rows = read_rows(xlsx_path)
+    rows, header_rows_dropped = read_rows(xlsx_path)
     raw_wo_numbers = {r.wo_no for r in rows if re.fullmatch(r"\d{7}", r.wo_no)}
 
     conn = psycopg2.connect(dsn)
@@ -589,6 +626,31 @@ def main():
     )
     write_review_file(importer.review, review_path)
 
+    # §6 (revised): "Every excluded row must be accounted for by reason...
+    # rows_read - Σ(exclusions by reason) = rows_loaded." rows_read here is
+    # the sheet's own count of real data rows (including the repeated
+    # header row the spec's "478 data rows" already counts) — not the
+    # post-header-drop figure.
+    REASON_LABELS = {
+        "kaang_date": "'ค้าง' in the date cell",
+        "year_out_of_range": "Year outside 2020-2030",
+        "manual_collision_review": "Held for manual collision review (deferred, not discarded)",
+        "unrecognised_status": "Unrecognised status value",
+    }
+    by_reason: dict[str, int] = {}
+    for _excel_row, _wo_no, reason, _cat in importer.excluded_rows:
+        by_reason[reason] = by_reason.get(reason, 0) + 1
+
+    rows_read_raw = len(rows) + header_rows_dropped
+    total_excluded = header_rows_dropped + sum(by_reason.values())
+    reconciled_loaded = rows_read_raw - total_excluded
+
+    special_excluded = [
+        (excel_row, wo_no, reason, cat)
+        for excel_row, wo_no, reason, cat in importer.excluded_rows
+        if cat in SPECIAL_CATEGORIES
+    ]
+
     must_resolve = sum(1 for i in importer.review if i.severity == "must_resolve")
     print("Import summary")
     print("--------------")
@@ -599,6 +661,41 @@ def main():
     print(f"Review items              : {len(importer.review)} ({must_resolve} must-resolve, "
           f"{len(importer.review) - must_resolve} fyi)")
     print(f"Review file               : {review_path}")
+    print()
+    print("Reconciliation (§6)")
+    print("--------------------")
+    print(f"{'Reason':<58} {'Rows':>5}")
+    print(f"{'Repeated header rows':<58} {header_rows_dropped:>5}")
+    for reason in ("kaang_date", "year_out_of_range", "manual_collision_review", "unrecognised_status"):
+        print(f"{REASON_LABELS[reason]:<58} {by_reason.get(reason, 0):>5}")
+    print(f"{'Unmatched worker name (row still imported, see note)':<58} {0:>5}")
+    print(f"{'-' * 58} {'-' * 5}")
+    print(f"{'Total excluded':<58} {total_excluded:>5}")
+    print()
+    print(f"Rows read (incl. repeated header) : {rows_read_raw}")
+    print(f"Rows read - total excluded        : {reconciled_loaded}")
+    print(f"Log entries actually staged       : {stats['log_entries_out']}")
+    if reconciled_loaded != stats["log_entries_out"]:
+        raise AssertionError(
+            f"Reconciliation does not balance: {rows_read_raw} - {total_excluded} = "
+            f"{reconciled_loaded}, but {stats['log_entries_out']} log entries were staged. "
+            "Some row is being dropped (or double-counted) for a reason this script isn't "
+            "tracking — do not promote until this balances exactly."
+        )
+    print("Balances exactly. ✓")
+    print()
+    print("Note on 'Unmatched worker name': rows with an unrecognised name fragment in the")
+    print("By column are NOT excluded — the log entry is still created, just without that")
+    print("worker attributed (flagged must_resolve in the review file). This is a deliberate")
+    print("choice to keep the row's date/status/other-workers data rather than drop it.")
+    print()
+    if special_excluded:
+        print(f"⚠ {len(special_excluded)} excluded row(s) belong to a แอร์/ยาแนว/โปรเจค work order")
+        print("  — a missing day is a missing payment once payment is built:")
+        for excel_row, wo_no, reason, cat in special_excluded:
+            print(f"    row {excel_row}  WO {wo_no}  {cat}  ({REASON_LABELS.get(reason, reason)})")
+    else:
+        print("No excluded row belongs to a แอร์/ยาแนว/โปรเจค work order.")
     print()
     print("Staged into the `staging` schema — nothing is in production yet.")
     print("Resolve review_needed.xlsx with your cousin, then promote with:")
