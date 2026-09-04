@@ -1,6 +1,5 @@
 'use server';
 
-import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
@@ -12,6 +11,7 @@ import { setAuditUser } from '@/lib/db-audit';
 import { getWorkOrderDetail, isWorkerAssigned } from '@/lib/queries/work-orders';
 
 export type ActionState = { error: string } | undefined;
+export type CreateWorkOrderState = { error: string } | { success: true; id: string; woNo: string } | undefined;
 
 // §2.1 work_orders.wo_no: "Generate it server-side inside the insert
 // transaction and let the unique constraint be the backstop... Use a
@@ -24,13 +24,13 @@ export type ActionState = { error: string } | undefined;
 async function insertWithGeneratedWoNo(
   insertRow: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], woNo: string) => Promise<{ id: string }>,
   userId: string
-): Promise<string> {
+): Promise<{ id: string; woNo: string }> {
   // §2.1: "Compute the period in Asia/Bangkok, not UTC" — a job opened just
   // after midnight Bangkok time is still the previous day in UTC.
   const today = bangkokToday();
   const period = today.slice(2, 4) + today.slice(5, 7); // YYMM
 
-  const { id } = await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await setAuditUser(tx, userId);
     const [{ lastSeq }] = await tx
       .insert(woCounters)
@@ -45,12 +45,12 @@ async function insertWithGeneratedWoNo(
     }
 
     const woNo = `${period}${String(lastSeq).padStart(3, '0')}`;
-    return insertRow(tx, woNo);
+    const { id } = await insertRow(tx, woNo);
+    return { id, woNo };
   });
-  return id;
 }
 
-export async function createWorkOrder(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+export async function createWorkOrder(_prevState: CreateWorkOrderState, formData: FormData): Promise<CreateWorkOrderState> {
   const session = await verifySession();
 
   const locationCode = String(formData.get('locationCode') ?? '').trim();
@@ -68,7 +68,11 @@ export async function createWorkOrder(_prevState: ActionState, formData: FormDat
     return { error: `ไม่พบห้อง/พื้นที่ "${locationCode}" — เลือกจากรายการที่มีอยู่` };
   }
 
-  const workOrderId = await insertWithGeneratedWoNo(async (tx, woNo) => {
+  // §3.4: doesn't redirect here — the work order is fully saved and real the
+  // moment this returns, independent of whatever the client does with
+  // photos next ("never block the job on the photo"). The client navigates
+  // itself once it's done trying to attach any held photos.
+  const { id, woNo } = await insertWithGeneratedWoNo(async (tx, woNo) => {
     const [wo] = await tx
       .insert(workOrders)
       .values({
@@ -89,7 +93,7 @@ export async function createWorkOrder(_prevState: ActionState, formData: FormDat
     return wo;
   }, session.userId);
 
-  redirect(`/work-orders/${workOrderId}`);
+  return { success: true, id, woNo };
 }
 
 export async function addLogEntry(_prevState: ActionState, formData: FormData): Promise<ActionState> {

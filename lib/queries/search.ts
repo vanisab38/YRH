@@ -10,6 +10,7 @@ import {
   woAssignments,
   woLogEntries,
   logEntryWorkers,
+  attachments,
 } from '@/db/schema';
 
 export type ListSort = 'stalled' | 'oldest' | 'room' | 'category' | 'woNo' | 'recentlyUpdated' | 'newest';
@@ -125,6 +126,9 @@ export function buildSearchConditions(filters: SearchFilters): SQL | undefined {
 // tell one consistent story (§3.3).
 export const LAST_ACTIVITY_SQL = sql`coalesce((select max(${woLogEntries.logDate}) from ${woLogEntries} where ${woLogEntries.workOrderId} = ${workOrders.id}), ${workOrders.openedDate})`;
 export const DAYS_WORKED_SQL = sql<number>`(select count(distinct ${woLogEntries.logDate}) from ${woLogEntries} where ${woLogEntries.workOrderId} = ${workOrders.id})::int`;
+// §3.4: "Show a photo count on work order cards... tells someone scanning
+// the pending list which jobs they can understand without opening."
+export const PHOTO_COUNT_SQL = sql<number>`(select count(*) from ${attachments} where ${attachments.workOrderId} = ${workOrders.id})::int`;
 
 // §3.1 room sort: location codes are text, so a plain ORDER BY puts room 501
 // after 1509. Numbered rooms sort by their numeric value, ascending; every
@@ -178,6 +182,7 @@ export async function searchWorkOrders(filters: SearchFilters, options: { forExp
       locationFloor: locations.floor,
       lastActivityDate: sql<string>`${LAST_ACTIVITY_SQL}`,
       daysWorked: DAYS_WORKED_SQL,
+      photoCount: PHOTO_COUNT_SQL,
     })
     .from(workOrders)
     .innerJoin(categories, eq(categories.id, workOrders.categoryId))

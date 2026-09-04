@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
 import { getLocationsForPicker, getActiveCategories, getActiveWorkers } from '@/lib/queries/work-orders';
+import { isPhotoStorageConfigured } from '@/lib/storage';
 import { NewWorkOrderForm } from './NewWorkOrderForm';
 
 // New work order (§3): created_by and opened_date fill automatically from
@@ -22,7 +23,12 @@ export default async function NewWorkOrderPage() {
         </Link>
         <h1 className="text-lg font-semibold text-zinc-900">เปิดงานใหม่</h1>
       </header>
-      <NewWorkOrderForm locations={locations} categories={categories} workers={workers} />
+      <NewWorkOrderForm
+        locations={locations}
+        categories={categories}
+        workers={workers}
+        photosEnabled={isPhotoStorageConfigured()}
+      />
     </div>
   );
 }

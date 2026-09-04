@@ -12,7 +12,7 @@ import {
   users,
 } from '@/db/schema';
 import { bangkokToday } from '@/lib/dates';
-import { DAYS_WORKED_SQL } from '@/lib/queries/search';
+import { DAYS_WORKED_SQL, PHOTO_COUNT_SQL } from '@/lib/queries/search';
 
 const workOrderListSelection = {
   id: workOrders.id,
@@ -33,7 +33,7 @@ const workOrderListSelection = {
 export async function getTodayOpenedWorkOrders() {
   const today = bangkokToday();
   return db
-    .select({ ...workOrderListSelection, daysWorked: DAYS_WORKED_SQL })
+    .select({ ...workOrderListSelection, daysWorked: DAYS_WORKED_SQL, photoCount: PHOTO_COUNT_SQL })
     .from(workOrders)
     .innerJoin(categories, eq(categories.id, workOrders.categoryId))
     .innerJoin(locations, eq(locations.id, workOrders.locationId))

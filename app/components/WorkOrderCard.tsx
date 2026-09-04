@@ -21,6 +21,9 @@ export type WorkOrderCardData = {
   daysWorked?: number;
   lastActivityDate?: string | null;
   closedDate?: string | null;
+  // §3.4: "a small camera icon with a number tells someone scanning the
+  // pending list which jobs they can understand without opening."
+  photoCount?: number;
 };
 
 function StaleBadge({ days }: { days: number }) {
@@ -64,6 +67,7 @@ export function WorkOrderCard({ wo }: { wo: WorkOrderCardData }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-zinc-900">{wo.locationCode}</span>
         <CategoryBadge name={wo.categoryName} colour={wo.categoryColour} isSpecial={wo.categoryIsSpecial} />
+        {!!wo.photoCount && <span className="text-xs text-zinc-400">📷 {wo.photoCount}</span>}
       </div>
       <p className="line-clamp-2 text-sm text-zinc-600">{wo.description}</p>
       <DateLine wo={wo} />
