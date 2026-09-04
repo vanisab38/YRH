@@ -1,5 +1,5 @@
 import 'server-only';
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { workOrders, categories, locations } from '@/db/schema';
 
@@ -43,9 +43,12 @@ export async function getRoomCategoryCounts(locationId: string) {
 }
 
 export async function getAllLocationsForPicker() {
-  return db
+  const rows = await db
     .select({ id: locations.id, code: locations.code, type: locations.type })
     .from(locations)
-    .where(eq(locations.isActive, true))
-    .orderBy(asc(locations.code));
+    .where(eq(locations.isActive, true));
+
+  // Plain SQL `ORDER BY code` sorts lexically ("1501" before "501"), so sort
+  // here instead: numeric-aware, e.g. "501" before "1208" before "1501".
+  return rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' }));
 }
