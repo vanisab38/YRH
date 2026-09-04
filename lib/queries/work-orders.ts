@@ -47,9 +47,11 @@ export async function getPendingWorkOrdersOldestFirst() {
     .orderBy(asc(workOrders.openedDate));
 }
 
-// New work order form: locations ordered with recently-used rooms first.
+// New work order form: locations ordered with recently-used rooms first,
+// never-used rooms after (in room-number order, not the DB's lexical order
+// -- see getAllLocationsForPicker for why that matters).
 export async function getLocationsForPicker() {
-  return db
+  const rows = await db
     .select({
       id: locations.id,
       code: locations.code,
@@ -59,8 +61,16 @@ export async function getLocationsForPicker() {
     .from(locations)
     .leftJoin(workOrders, eq(workOrders.locationId, locations.id))
     .where(eq(locations.isActive, true))
-    .groupBy(locations.id)
-    .orderBy(sql`max(${workOrders.openedDate}) desc nulls last`, asc(locations.code));
+    .groupBy(locations.id);
+
+  return rows.sort((a, b) => {
+    if (a.lastUsed !== b.lastUsed) {
+      if (a.lastUsed === null) return 1;
+      if (b.lastUsed === null) return -1;
+      return b.lastUsed.localeCompare(a.lastUsed);
+    }
+    return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+  });
 }
 
 export async function getActiveCategories() {
