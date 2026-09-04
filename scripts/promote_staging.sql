@@ -28,6 +28,15 @@ INSERT INTO log_entry_workers (log_entry_id, worker_id)
 SELECT log_entry_id, worker_id
 FROM staging.log_entry_workers;
 
+-- §2.1 step 11b: extend wo_counters to cover whatever periods this batch
+-- just promoted, or the next work order created through the app in that
+-- period would start back at 001 and collide with an imported number.
+INSERT INTO wo_counters (period, last_seq)
+SELECT left(wo_no, 4), max(right(wo_no, 3)::int)
+FROM staging.work_orders
+GROUP BY left(wo_no, 4)
+ON CONFLICT (period) DO UPDATE SET last_seq = GREATEST(wo_counters.last_seq, excluded.last_seq);
+
 -- §6: verify counts before trusting the promotion.
 SELECT
   (SELECT count(*) FROM staging.work_orders)   AS staged_work_orders,

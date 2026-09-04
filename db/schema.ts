@@ -85,6 +85,18 @@ export const locations = pgTable('locations', {
 ]);
 
 // ---------------------------------------------------------------------------
+// wo_counters — §2.1: atomic per-period sequence for wo_no generation.
+// A single-row upsert (INSERT ... ON CONFLICT DO UPDATE SET last_seq =
+// last_seq + 1) is race-free with no retry loop, unlike reading MAX(seq)
+// and adding one, which two concurrent requests can both read before either
+// commits.
+// ---------------------------------------------------------------------------
+export const woCounters = pgTable('wo_counters', {
+  period: text('period').primaryKey(), // 'YYMM', e.g. '2609'
+  lastSeq: integer('last_seq').notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // work_orders — the job, created once
 // ---------------------------------------------------------------------------
 export const workOrders = pgTable('work_orders', {

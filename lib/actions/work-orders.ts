@@ -2,9 +2,9 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { eq, like, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { workOrders, woAssignments, woLogEntries, logEntryWorkers, locations } from '@/db/schema';
+import { workOrders, woAssignments, woLogEntries, logEntryWorkers, locations, woCounters } from '@/db/schema';
 import { verifySession } from '@/lib/dal';
 import { canAddLogEntryToJob } from '@/lib/permissions';
 import { bangkokToday } from '@/lib/dates';
@@ -13,37 +13,41 @@ import { getWorkOrderDetail, isWorkerAssigned } from '@/lib/queries/work-orders'
 
 export type ActionState = { error: string } | undefined;
 
-// §2 work_orders.wo_no: "Generate it server-side inside the insert
-// transaction and let the unique constraint be the backstop — never in the
-// browser, or two staff keying at once will collide." Retries on a unique
-// violation (Postgres code 23505) rather than trusting the computed max,
-// since two requests can race between the SELECT and the INSERT.
+// §2.1 work_orders.wo_no: "Generate it server-side inside the insert
+// transaction and let the unique constraint be the backstop... Use a
+// counter table, not MAX(seq) + 1. Reading the highest existing number and
+// adding one is a race: two requests read 333 and both try to write 334."
+// A single-row upsert on wo_counters is atomic — Postgres serialises
+// concurrent upserts on the same row, so there's no read-then-write gap to
+// race, and (unlike the old MAX+retry approach) no wasted attempts under
+// real concurrency either.
 async function insertWithGeneratedWoNo(
   insertRow: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], woNo: string) => Promise<{ id: string }>,
   userId: string
 ): Promise<string> {
+  // §2.1: "Compute the period in Asia/Bangkok, not UTC" — a job opened just
+  // after midnight Bangkok time is still the previous day in UTC.
   const today = bangkokToday();
-  const prefix = today.slice(2, 4) + today.slice(5, 7); // YYMM
+  const period = today.slice(2, 4) + today.slice(5, 7); // YYMM
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const [{ maxSeq }] = await db
-      .select({ maxSeq: sql<number>`coalesce(max(cast(right(${workOrders.woNo}, 3) as int)), 0)` })
-      .from(workOrders)
-      .where(like(workOrders.woNo, `${prefix}%`));
-    const woNo = `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
-    try {
-      const { id } = await db.transaction(async (tx) => {
-        await setAuditUser(tx, userId);
-        return insertRow(tx, woNo);
-      });
-      return id;
-    } catch (err) {
-      const pgCode = (err as { code?: string } | null)?.code;
-      if (pgCode === '23505' && attempt < 4) continue; // wo_no collision — retry with a fresh max
-      throw err;
+  const { id } = await db.transaction(async (tx) => {
+    await setAuditUser(tx, userId);
+    const [{ lastSeq }] = await tx
+      .insert(woCounters)
+      .values({ period, lastSeq: 1 })
+      .onConflictDoUpdate({ target: woCounters.period, set: { lastSeq: sql`${woCounters.lastSeq} + 1` } })
+      .returning({ lastSeq: woCounters.lastSeq });
+
+    // §2.1: "Guard the 999 ceiling... fail with a clear error instead of a
+    // confusing unique violation" from a wo_no whose 3-digit tail overflowed.
+    if (lastSeq > 999) {
+      throw new Error(`เดือนนี้มีงานครบ 999 งานแล้ว ต้องขยายรูปแบบเลขที่งาน (period ${period})`);
     }
-  }
-  throw new Error('Could not generate a unique WO#');
+
+    const woNo = `${period}${String(lastSeq).padStart(3, '0')}`;
+    return insertRow(tx, woNo);
+  });
+  return id;
 }
 
 export async function createWorkOrder(_prevState: ActionState, formData: FormData): Promise<ActionState> {
