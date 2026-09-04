@@ -18,6 +18,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
   const filters: SearchFilters = {
     q: params.q,
+    room: params.room,
     status: params.status,
     categoryId: params.categoryId,
     groupId: params.groupId,
@@ -47,13 +48,22 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </header>
 
       <form className="flex flex-col gap-3">
-        <input
-          name="q"
-          defaultValue={filters.q ?? ''}
-          placeholder="ค้นหาคำอธิบาย, เลขที่งาน, หรือห้อง"
-          autoComplete="off"
-          className="h-12 rounded-lg border border-zinc-300 px-4 text-base focus:border-zinc-500 focus:outline-none"
-        />
+        <div className="flex gap-2">
+          <input
+            name="q"
+            defaultValue={filters.q ?? ''}
+            placeholder="ค้นหาคำอธิบายหรือเลขที่งาน"
+            autoComplete="off"
+            className="h-12 flex-1 rounded-lg border border-zinc-300 px-4 text-base focus:border-zinc-500 focus:outline-none"
+          />
+          <input
+            name="room"
+            defaultValue={filters.room ?? ''}
+            placeholder="ห้อง"
+            autoComplete="off"
+            className="h-12 w-28 rounded-lg border border-zinc-300 px-4 text-base focus:border-zinc-500 focus:outline-none"
+          />
+        </div>
 
         <div className="flex flex-wrap gap-2">
           <select name="status" defaultValue={filters.status ?? ''} className="h-10 rounded-full border border-zinc-300 px-3 text-sm">

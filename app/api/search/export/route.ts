@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const filters: SearchFilters = {
     q: searchParams.get('q') ?? undefined,
+    room: searchParams.get('room') ?? undefined,
     status: searchParams.get('status') ?? undefined,
     categoryId: searchParams.get('categoryId') ?? undefined,
     groupId: searchParams.get('groupId') ?? undefined,

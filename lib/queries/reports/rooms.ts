@@ -41,5 +41,9 @@ export async function getRoomReport(dateFrom: string, dateTo: string): Promise<R
     if (row.count >= 2) loc.hasRepeatIssue = true;
   }
 
-  return [...byLocation.values()].sort((a, b) => b.total - a.total);
+  // Room number ascending (e.g. 501, 508, 603 ... 1408) rather than busiest
+  // first, so the list reads like a directory you can scan for one room.
+  return [...byLocation.values()].sort((a, b) =>
+    a.locationCode.localeCompare(b.locationCode, undefined, { numeric: true, sensitivity: 'base' })
+  );
 }

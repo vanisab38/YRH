@@ -12,6 +12,7 @@ import {
 
 export type SearchFilters = {
   q?: string;
+  room?: string;
   status?: string;
   categoryId?: string;
   groupId?: string;
@@ -20,11 +21,14 @@ export type SearchFilters = {
   dateTo?: string;
 };
 
-// §3 Search: "one box searching description, WO#, legacy_wo_no and room
-// together, plus filter chips for status, category, group, worker, and date
-// range." §5: substring match via ILIKE, which uses the pg_trgm index on
-// description (idx_wo_description_trgm) rather than word-based full-text
-// search — Thai has no spaces between words for tsvector to split on.
+// §3 Search: separate boxes for free text (description, WO#, legacy_wo_no)
+// and room, plus filter chips for status, category, group, worker, and date
+// range. Room used to share the free-text box with job numbers, but a room
+// like "808" also substring-matched job numbers like "2608083" — split so
+// each box only searches its own column. §5: substring match via ILIKE,
+// which uses the pg_trgm index on description (idx_wo_description_trgm)
+// rather than word-based full-text search — Thai has no spaces between
+// words for tsvector to split on.
 export function buildSearchConditions(filters: SearchFilters): SQL | undefined {
   const conditions: (SQL | undefined)[] = [];
 
@@ -34,11 +38,12 @@ export function buildSearchConditions(filters: SearchFilters): SQL | undefined {
       or(
         ilike(workOrders.description, `%${q}%`),
         ilike(workOrders.woNo, `%${q}%`),
-        ilike(workOrders.legacyWoNo, `%${q}%`),
-        ilike(locations.code, `%${q}%`)
+        ilike(workOrders.legacyWoNo, `%${q}%`)
       )
     );
   }
+  const room = filters.room?.trim();
+  if (room) conditions.push(ilike(locations.code, `%${room}%`));
   if (filters.status) conditions.push(eq(workOrders.status, filters.status));
   if (filters.categoryId) conditions.push(eq(workOrders.categoryId, filters.categoryId));
   if (filters.groupId) conditions.push(eq(categories.groupId, filters.groupId));
