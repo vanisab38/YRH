@@ -2,9 +2,12 @@ import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
 import { canViewReports, canManageAdmin } from '@/lib/permissions';
 import { getWorkerOpenedSpecialWorkOrders } from '@/lib/queries/admin-review';
-import { getTodayOpenedWorkOrders, getPendingWorkOrdersOldestFirst } from '@/lib/queries/work-orders';
+import { getTodayOpenedWorkOrders } from '@/lib/queries/work-orders';
+import { searchWorkOrders, getFloorOptions, type SearchFilters } from '@/lib/queries/search';
 import { logout } from '@/app/actions/auth';
 import { WorkOrderCard } from '@/app/components/WorkOrderCard';
+import { ListControls } from '@/app/components/ListControls';
+import { groupWorkOrders } from '@/lib/group-work-orders';
 
 const ROLE_LABEL_TH: Record<string, string> = {
   admin: 'ผู้ดูแลระบบ',
@@ -12,15 +15,37 @@ const ROLE_LABEL_TH: Record<string, string> = {
   worker: 'ช่าง',
 };
 
-// Today screen (§3): jobs opened today, all pending oldest first, one big
-// "เปิดงานใหม่" button, and (for admin/office) the special-work review list.
-export default async function Home() {
+type HomeProps = {
+  searchParams: Promise<Record<string, string | undefined>>;
+};
+
+// Today screen (§3): jobs opened today, and the pending list — search,
+// sort, group and filter chips (§3.1), defaulting to the "stalled" sort so
+// the failure mode this system exists to catch (a job nobody has touched
+// in weeks) surfaces first, not just whatever was opened longest ago.
+export default async function Home({ searchParams }: HomeProps) {
   const session = await verifySession();
-  const [todayOrders, pendingOrders, reviewList] = await Promise.all([
+  const params = await searchParams;
+
+  const group = params.group === 'room' || params.group === 'floor' ? params.group : 'none';
+  const filters: SearchFilters = {
+    status: 'pending',
+    q: params.q,
+    sort: (params.sort as SearchFilters['sort']) || 'stalled',
+    specialOnly: params.special === 'on',
+    stalledOver7: params.stalled7 === 'on',
+    floor: params.floor,
+    assignedWorkerId: params.mine === 'on' ? (session.workerId ?? undefined) : undefined,
+  };
+
+  const [todayOrders, pendingOrders, reviewList, floorOptions] = await Promise.all([
     getTodayOpenedWorkOrders(),
-    getPendingWorkOrdersOldestFirst(),
+    searchWorkOrders(filters),
     canViewReports(session.role) ? getWorkerOpenedSpecialWorkOrders() : Promise.resolve([]),
+    getFloorOptions(),
   ]);
+
+  const pendingGroups = groupWorkOrders(pendingOrders, group);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-6">
@@ -96,14 +121,47 @@ export default async function Home() {
         )}
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-zinc-700">ค้างทั้งหมด — เก่าสุดก่อน ({pendingOrders.length})</h2>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-zinc-700">ค้างทั้งหมด ({pendingOrders.length})</h2>
+
+        <ListControls
+          action="/"
+          storageKey="today-list-prefs"
+          values={{
+            q: params.q,
+            sort: filters.sort,
+            group,
+            mine: params.mine === 'on',
+            special: params.special === 'on',
+            stalled7: params.stalled7 === 'on',
+            floor: params.floor,
+          }}
+          floorOptions={floorOptions}
+          showMine={!!session.workerId}
+          submitLabel="กรอง"
+        />
+
         {pendingOrders.length === 0 ? (
           <p className="text-sm text-zinc-400">ไม่มีงานค้าง</p>
-        ) : (
+        ) : group === 'none' ? (
           <div className="flex flex-col gap-2">
             {pendingOrders.map((wo) => (
               <WorkOrderCard key={wo.id} wo={wo} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {pendingGroups.map((g) => (
+              <div key={g.key} className="flex flex-col gap-2">
+                <h3 className="text-xs font-semibold text-zinc-500">
+                  {g.label} ({g.items.length})
+                </h3>
+                <div className="flex flex-col gap-2">
+                  {g.items.map((wo) => (
+                    <WorkOrderCard key={wo.id} wo={wo} />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

@@ -9,18 +9,22 @@ export async function GET(request: Request) {
   // Route Handlers get the same treatment as any public-facing endpoint
   // (Next's auth guide): proxy.ts is an optimistic cookie check, this is
   // the real one.
-  await verifySession();
+  const session = await verifySession();
 
   const { searchParams } = new URL(request.url);
   const filters: SearchFilters = {
     q: searchParams.get('q') ?? undefined,
-    room: searchParams.get('room') ?? undefined,
     status: searchParams.get('status') ?? undefined,
     categoryId: searchParams.get('categoryId') ?? undefined,
     groupId: searchParams.get('groupId') ?? undefined,
     workerId: searchParams.get('workerId') ?? undefined,
     dateFrom: searchParams.get('dateFrom') ?? undefined,
     dateTo: searchParams.get('dateTo') ?? undefined,
+    sort: (searchParams.get('sort') as SearchFilters['sort']) ?? undefined,
+    specialOnly: searchParams.get('special') === 'on',
+    stalledOver7: searchParams.get('stalled7') === 'on',
+    floor: searchParams.get('floor') ?? undefined,
+    assignedWorkerId: searchParams.get('mine') === 'on' ? (session.workerId ?? undefined) : undefined,
   };
 
   const rows = await searchWorkOrders(filters, { forExport: true });

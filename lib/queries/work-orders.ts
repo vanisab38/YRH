@@ -12,6 +12,7 @@ import {
   users,
 } from '@/db/schema';
 import { bangkokToday } from '@/lib/dates';
+import { DAYS_WORKED_SQL } from '@/lib/queries/search';
 
 const workOrderListSelection = {
   id: workOrders.id,
@@ -25,26 +26,19 @@ const workOrderListSelection = {
   locationCode: locations.code,
 };
 
-// Today screen (§3): jobs opened today, and separately all pending oldest first.
+// Today screen (§3): jobs opened today. The pending list (§3.1) lives in
+// lib/queries/search.ts's searchWorkOrders — same sort/group/filter/search
+// component as the Search page, per Phase 11's "build both from the same
+// component."
 export async function getTodayOpenedWorkOrders() {
   const today = bangkokToday();
   return db
-    .select(workOrderListSelection)
+    .select({ ...workOrderListSelection, daysWorked: DAYS_WORKED_SQL })
     .from(workOrders)
     .innerJoin(categories, eq(categories.id, workOrders.categoryId))
     .innerJoin(locations, eq(locations.id, workOrders.locationId))
     .where(eq(workOrders.openedDate, today))
     .orderBy(desc(workOrders.createdAt));
-}
-
-export async function getPendingWorkOrdersOldestFirst() {
-  return db
-    .select(workOrderListSelection)
-    .from(workOrders)
-    .innerJoin(categories, eq(categories.id, workOrders.categoryId))
-    .innerJoin(locations, eq(locations.id, workOrders.locationId))
-    .where(eq(workOrders.status, 'pending'))
-    .orderBy(asc(workOrders.openedDate));
 }
 
 // New work order form: locations ordered with recently-used rooms first,

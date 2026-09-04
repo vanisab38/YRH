@@ -1,41 +1,58 @@
 import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
-import { searchWorkOrders, getFilterOptions, SEARCH_PAGE_LIMIT, type SearchFilters } from '@/lib/queries/search';
+import { searchWorkOrders, getFilterOptions, getFloorOptions, SEARCH_PAGE_LIMIT, type SearchFilters } from '@/lib/queries/search';
 import { getActiveWorkers } from '@/lib/queries/work-orders';
-import { formatThaiDate } from '@/lib/dates';
-import { CategoryBadge } from '@/app/components/CategoryBadge';
-import { StatusPill } from '@/app/components/StatusPill';
+import { WorkOrderCard } from '@/app/components/WorkOrderCard';
+import { ListControls } from '@/app/components/ListControls';
 
 type SearchPageProps = {
   searchParams: Promise<Record<string, string | undefined>>;
 };
 
-// §3 Search: one box across description/WO#/legacy_wo_no/room, plus filter
-// chips for status/category/group/worker/date range, export to Excel.
-// GET form + searchParams so results are a plain shareable/bookmarkable URL.
+// §3/§3.1 Search: the same search-box/sort/group/filter-chip component as
+// the Today screen's pending list (see app/page.tsx), defaulting to
+// everything rather than pending-only, plus its own extra filters
+// (status/category/group/worker/date range) and Excel export.
 export default async function SearchPage({ searchParams }: SearchPageProps) {
-  await verifySession();
+  const session = await verifySession();
   const params = await searchParams;
+  const group = params.group === 'room' || params.group === 'floor' ? params.group : 'none';
   const filters: SearchFilters = {
     q: params.q,
-    room: params.room,
     status: params.status,
     categoryId: params.categoryId,
     groupId: params.groupId,
     workerId: params.workerId,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
+    sort: (params.sort as SearchFilters['sort']) || 'newest',
+    specialOnly: params.special === 'on',
+    stalledOver7: params.stalled7 === 'on',
+    floor: params.floor,
+    assignedWorkerId: params.mine === 'on' ? (session.workerId ?? undefined) : undefined,
   };
-  const hasAnyFilter = Object.values(filters).some(Boolean);
+  // `sort` always has a default value, so it can't be part of this check —
+  // otherwise a bare visit to /search would count as "has filters" and run
+  // an unfiltered query instead of showing the empty-state prompt below.
+  const hasAnyFilter = Object.entries(filters).some(([k, v]) => k !== 'sort' && Boolean(v));
 
-  const [results, { categories, groups }, workers] = await Promise.all([
+  const [results, { categories, groups }, workers, floorOptions] = await Promise.all([
     hasAnyFilter ? searchWorkOrders(filters) : Promise.resolve([]),
     getFilterOptions(),
     getActiveWorkers(),
+    getFloorOptions(),
   ]);
 
+  // Built from the raw URL params (not the resolved `filters` object) so the
+  // export link carries exactly what the form submitted — same param names
+  // the export route and this page both parse (`special`, `stalled7`,
+  // `mine`), rather than the filters object's internal field names.
+  const EXPORT_PARAM_KEYS = [
+    'q', 'status', 'categoryId', 'groupId', 'workerId', 'dateFrom', 'dateTo',
+    'sort', 'special', 'stalled7', 'floor', 'mine',
+  ] as const;
   const exportQuery = new URLSearchParams(
-    Object.entries(filters).filter(([, v]) => v) as [string, string][]
+    EXPORT_PARAM_KEYS.filter((k) => params[k]).map((k) => [k, params[k]!])
   ).toString();
 
   return (
@@ -47,24 +64,22 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         <h1 className="text-lg font-semibold text-zinc-900">ค้นหางาน</h1>
       </header>
 
-      <form className="flex flex-col gap-3">
-        <div className="flex gap-2">
-          <input
-            name="q"
-            defaultValue={filters.q ?? ''}
-            placeholder="ค้นหาคำอธิบายหรือเลขที่งาน"
-            autoComplete="off"
-            className="h-12 flex-1 rounded-lg border border-zinc-300 px-4 text-base focus:border-zinc-500 focus:outline-none"
-          />
-          <input
-            name="room"
-            defaultValue={filters.room ?? ''}
-            placeholder="ห้อง"
-            autoComplete="off"
-            className="h-12 w-28 rounded-lg border border-zinc-300 px-4 text-base focus:border-zinc-500 focus:outline-none"
-          />
-        </div>
-
+      <ListControls
+        action="/search"
+        storageKey="search-list-prefs"
+        values={{
+          q: params.q,
+          sort: filters.sort,
+          group,
+          mine: params.mine === 'on',
+          special: params.special === 'on',
+          stalled7: params.stalled7 === 'on',
+          floor: params.floor,
+        }}
+        floorOptions={floorOptions}
+        showMine={!!session.workerId}
+        submitLabel="ค้นหา"
+      >
         <div className="flex flex-wrap gap-2">
           <select name="status" defaultValue={filters.status ?? ''} className="h-10 rounded-full border border-zinc-300 px-3 text-sm">
             <option value="">ทุกสถานะ</option>
@@ -121,11 +136,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             />
           </label>
         </div>
-
-        <button type="submit" className="h-12 rounded-lg bg-zinc-900 text-base font-medium text-white">
-          ค้นหา
-        </button>
-      </form>
+      </ListControls>
 
       {hasAnyFilter && (
         <div className="flex items-center justify-between">
@@ -153,27 +164,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
       <div className="flex flex-col gap-2">
         {results.map((wo) => (
-          <Link
-            key={wo.id}
-            href={`/work-orders/${wo.id}`}
-            className="flex flex-col gap-1.5 rounded-lg border border-zinc-200 p-3 hover:border-zinc-400"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-sm text-zinc-500">
-                {wo.woNo}
-                {wo.legacyWoNo && wo.legacyWoNo !== wo.woNo && (
-                  <span className="text-zinc-400"> (เดิม {wo.legacyWoNo})</span>
-                )}
-              </span>
-              <StatusPill status={wo.status} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-zinc-900">{wo.locationCode}</span>
-              <CategoryBadge name={wo.categoryName} colour={wo.categoryColour} isSpecial={wo.categoryIsSpecial} />
-            </div>
-            <p className="line-clamp-2 text-sm text-zinc-600">{wo.description}</p>
-            <p className="text-xs text-zinc-400">{formatThaiDate(wo.openedDate)}</p>
-          </Link>
+          <WorkOrderCard key={wo.id} wo={wo} />
         ))}
       </div>
     </div>
