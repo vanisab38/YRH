@@ -7,6 +7,16 @@ import { createClient } from '@supabase/supabase-js';
 // so display always goes through a short-lived signed URL, never a public one.
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'attachments';
 
+// §3.5: "if storage isn't configured, hide the photo section entirely
+// rather than showing a broken one" — a cheap boolean check, so pages can
+// decide up front rather than discovering it by catching an exception
+// (which only happens to work when there's already at least one photo to
+// fetch a signed URL for — an empty gallery on an unconfigured bucket
+// wouldn't hit that path at all).
+export function isPhotoStorageConfigured(): boolean {
+  return !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
 function getClient() {
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

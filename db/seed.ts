@@ -17,11 +17,13 @@ async function main() {
     .values({
       username: 'imported',
       passwordHash: '!', // never a valid bcrypt hash — this account cannot log in
-      displayName: 'Imported from Excel',
+      // §3.5: "the system user's display name is English inside a Thai
+      // sentence" (บันทึกโดย Imported from Excel, shown throughout the app).
+      displayName: 'นำเข้าจาก Excel',
       role: 'admin',
       isActive: false,
     })
-    .onConflictDoUpdate({ target: users.username, set: { username: sql`excluded.username` } })
+    .onConflictDoUpdate({ target: users.username, set: { displayName: sql`excluded.display_name` } })
     .returning({ id: users.id });
 
   await db.execute(sql`select set_config('app.current_user_id', ${importedUser.id}, false)`);
@@ -103,19 +105,30 @@ async function main() {
     });
 
   // --- workers (§2 workers seed) ---------------------------------------------
+  // §3.5 (workers section): the By column in the spreadsheet mixed "who did
+  // the work" with "what the job is waiting on" — รอสี ("waiting for
+  // paint") and จัดซื้อ ("purchasing") are blocking reasons, not people, so
+  // they're seeded inactive: history stays intact, but they no longer show
+  // up as tappable "who worked on this" chips inviting staff to record a
+  // blocking reason as if it were a worker. Chips render staff-first by
+  // sort_order since staff are tapped many times a day, contractors a few
+  // times a month.
   await db
     .insert(workers)
     .values([
-      { name: 'เปิ้ล', type: 'staff', sortOrder: 1 },
-      { name: 'นา', type: 'staff', sortOrder: 2 },
-      { name: 'ข้าง', type: 'staff', sortOrder: 3 },
-      { name: 'ฮอง', type: 'staff', sortOrder: 4 },
-      { name: 'ช่างมิตซูบิชิ', type: 'contractor', sortOrder: 5 },
-      { name: 'OutSource', type: 'other', sortOrder: 6 },
-      { name: 'จัดซื้อ', type: 'other', sortOrder: 7 },
-      { name: 'รอสี', type: 'other', sortOrder: 8 },
+      { name: 'เปิ้ล', type: 'staff', isActive: true, sortOrder: 1 },
+      { name: 'นา', type: 'staff', isActive: true, sortOrder: 2 },
+      { name: 'ข้าง', type: 'staff', isActive: true, sortOrder: 3 },
+      { name: 'ฮอง', type: 'staff', isActive: true, sortOrder: 4 },
+      { name: 'ช่างมิตซูบิชิ', type: 'contractor', isActive: true, sortOrder: 5 },
+      { name: 'OutSource', type: 'contractor', isActive: true, sortOrder: 6 },
+      { name: 'จัดซื้อ', type: 'other', isActive: false, sortOrder: 7 },
+      { name: 'รอสี', type: 'other', isActive: false, sortOrder: 8 },
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: workers.name,
+      set: { type: sql`excluded.type`, isActive: sql`excluded.is_active`, sortOrder: sql`excluded.sort_order` },
+    });
 
   // --- locations seen in the August sheet (§6 step 10, incl. near-dupes) -----
   // Room codes follow FFRR (§2 locations) — floor parsed here; leave null for

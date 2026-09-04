@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/dal';
 import { canAddLogEntryToJob } from '@/lib/permissions';
 import { getWorkOrderDetail, getActiveWorkers, isWorkerAssigned } from '@/lib/queries/work-orders';
 import { getWorkOrderAttachments } from '@/lib/queries/attachments';
+import { isPhotoStorageConfigured } from '@/lib/storage';
 import { formatThaiDate } from '@/lib/dates';
 import { CategoryBadge } from '@/app/components/CategoryBadge';
 import { StatusPill } from '@/app/components/StatusPill';
@@ -24,15 +25,11 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   const canLog = canAddLogEntryToJob(session.role, job.createdBy, session.userId) || assigned;
   const workers = canLog ? await getActiveWorkers() : [];
 
-  // §2 attachments: Supabase Storage may not be configured yet (see README
-  // "Photos") — degrade to "photos unavailable" instead of a 500 page.
-  let photos: Awaited<ReturnType<typeof getWorkOrderAttachments>> = [];
-  let photosUnavailable = false;
-  try {
-    photos = await getWorkOrderAttachments(id);
-  } catch {
-    photosUnavailable = true;
-  }
+  // §3.5: "if storage isn't configured, hide the photo section entirely
+  // rather than showing a broken one" — not a message staff would read as
+  // an error, just an absent feature.
+  const photosEnabled = isPhotoStorageConfigured();
+  const photos = photosEnabled ? await getWorkOrderAttachments(id) : [];
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-6">
@@ -87,17 +84,17 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
         )}
       </section>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-zinc-700">รูปภาพ</h2>
-        {photosUnavailable ? (
-          <p className="text-sm text-zinc-400">ระบบจัดเก็บรูปภาพยังไม่ได้ตั้งค่า</p>
-        ) : photos.length === 0 ? (
-          <p className="text-sm text-zinc-400">ยังไม่มีรูปภาพ</p>
-        ) : (
-          <PhotoGallery photos={photos} />
-        )}
-        {canLog && !photosUnavailable && <PhotoUploadForm workOrderId={job.id} />}
-      </section>
+      {photosEnabled && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-zinc-700">รูปภาพ</h2>
+          {photos.length === 0 ? (
+            <p className="text-sm text-zinc-400">ยังไม่มีรูปภาพ</p>
+          ) : (
+            <PhotoGallery photos={photos} />
+          )}
+          {canLog && <PhotoUploadForm workOrderId={job.id} />}
+        </section>
+      )}
 
       {canLog && <AddLogEntryForm workOrderId={job.id} workers={workers} />}
     </div>

@@ -39,26 +39,28 @@ export async function uploadAttachments(_prevState: UploadState, formData: FormD
 
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
-    const original = Buffer.from(await file.arrayBuffer());
-    const { buffer, contentType } = await resizeForUpload(original);
     const path = `work-orders/${workOrderId}/${randomUUID()}.jpg`;
 
+    // §3.5: "never reference code, files, or documentation in user-facing
+    // text... say what the person can do" — resize and upload can both
+    // fail (a corrupt/unsupported image, storage unreachable), and either
+    // way staff see the same plain retry prompt while the real cause is
+    // logged server-side.
     try {
+      const original = Buffer.from(await file.arrayBuffer());
+      const { buffer, contentType } = await resizeForUpload(original);
       await uploadAttachmentFile(path, buffer, contentType);
-    } catch {
-      return {
-        error:
-          'ไม่สามารถอัปโหลดรูปได้ — ระบบจัดเก็บไฟล์ยังไม่ได้ตั้งค่า (ดู README ส่วน Photos)',
-      };
+      await db.insert(attachments).values({
+        workOrderId,
+        storagePath: path,
+        filename: file.name,
+        mimeType: contentType,
+        uploadedBy: session.userId,
+      });
+    } catch (err) {
+      console.error('Photo upload failed', err);
+      return { error: 'อัปโหลดรูปไม่สำเร็จ ลองอีกครั้ง' };
     }
-
-    await db.insert(attachments).values({
-      workOrderId,
-      storagePath: path,
-      filename: file.name,
-      mimeType: contentType,
-      uploadedBy: session.userId,
-    });
   }
 
   revalidatePath(`/work-orders/${workOrderId}`);

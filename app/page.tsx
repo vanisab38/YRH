@@ -5,6 +5,7 @@ import { getWorkerOpenedSpecialWorkOrders } from '@/lib/queries/admin-review';
 import { getTodayOpenedWorkOrders } from '@/lib/queries/work-orders';
 import { searchWorkOrders, getFloorOptions, type SearchFilters } from '@/lib/queries/search';
 import { logout } from '@/app/actions/auth';
+import { formatThaiDate } from '@/lib/dates';
 import { WorkOrderCard } from '@/app/components/WorkOrderCard';
 import { ListControls } from '@/app/components/ListControls';
 import { groupWorkOrders } from '@/lib/group-work-orders';
@@ -100,7 +101,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 </div>
                 <div className="text-zinc-600">{wo.description}</div>
                 <div className="mt-1 text-xs text-zinc-500">
-                  เปิดโดย {wo.openedBy} เมื่อ {wo.openedDate}
+                  เปิดโดย {wo.openedBy} เมื่อ {formatThaiDate(wo.openedDate)}
                 </div>
               </li>
             ))}
